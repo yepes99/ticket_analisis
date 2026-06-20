@@ -57,6 +57,7 @@ pip install -r requirements.txt
 ▶️ Ejecutar el proyecto
 Si es un script Python:
 python app.py
+
 Si usas Streamlit:
 streamlit run app.py
 
