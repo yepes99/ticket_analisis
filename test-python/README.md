@@ -1,78 +1,51 @@
-# 📊 Proyecto Python - Procesamiento de Tickets
+# Proyecto Python - Dashboard de Tickets
 
-Este proyecto procesa y analiza tickets a partir de un archivo CSV, aplicando limpieza de datos, normalización de clientes, cálculo de SLAs y generación de métricas analíticas.
+Este proyecto procesa y analiza tickets a partir de un archivo CSV subido desde la aplicacion Streamlit. Aplica limpieza de datos, normalizacion de clientes, calculo de SLAs y metricas analiticas.
 
----
+## Caracteristicas
 
-## 🚀 Características
+- Carga de CSV mediante file uploader en Streamlit
+- Limpieza y transformacion de datos de tickets
+- Normalizacion de clientes, dominios y URLs
+- Calculo de tiempos de resolucion
+- Evaluacion de SLA por prioridad y size
+- Clasificacion automatica de categorias
 
-- Limpieza y transformación de datos de tickets
-- Normalización de clientes (dominios y URLs)
-- Cálculo de tiempos de resolución
-- Evaluación de SLA por prioridad y tamaño
-- Clasificación automática de categorías
-- Preparado para uso en Streamlit o análisis posterior
+## Estructura del proyecto
 
----
-
-## 📁 Estructura del proyecto
-mi-proyecto/
-│
-├── app.py # Interfaz (Streamlit u otro)
-├── process.py # Lógica de procesamiento
-├── data.csv # Dataset de entrada
-├── requirements.txt # Dependencias
-├── .gitignore
+```text
+test-python/
+├── app.py            # Interfaz Streamlit
+├── process.py        # Logica de procesamiento
+├── categorias.py     # Clasificacion de categorias
+├── cliente.py        # Normalizacion de cliente
+├── sla.py            # Calculo de SLAs
+├── requirements.txt  # Dependencias
 └── README.md
+```
 
+## Instalacion
 
----
-
-## ⚙️ Instalación
-
-### 1. Clonar el repositorio
-
-
-git clone https://github.com/TU_USUARIO/TU_REPO.git
-cd TU_REPO
-
-🐍 Crear entorno virtual
-
-🔹 En Windows
-
+```powershell
 python -m venv venv
 venv\Scripts\activate
+pip install -r requirements.txt
+```
 
-🔹 En Linux / macOS
+En Linux o macOS:
 
+```bash
 python3 -m venv venv
 source venv/bin/activate
-
-📦 Instalar dependencias
 pip install -r requirements.txt
+```
 
-📦 Instalar dependencias
-pip install -r requirements.txt
+## Ejecutar
 
-▶️ Ejecutar el proyecto
-Si es un script Python:
-python app.py
-
-Si usas Streamlit:
+```bash
 streamlit run app.py
+```
 
-🧠 Generar requirements.txt (si lo necesitas)
-pip freeze > requirements.txt
+Al abrir la aplicacion, sube el CSV desde la barra lateral. El archivo se procesa en memoria y no se guarda en el repositorio.
 
-
-🐧 Consideraciones para Linux
-
-Si usas Linux y tienes errores con python:
-
-sudo apt update
-sudo apt install python3 python3-venv python3-pip
-
-Crear entorno:
-
-python3 -m venv venv
-source venv/bin/activate
+Los archivos CSV estan ignorados por Git mediante `.gitignore` para evitar subir datos sensibles por accidente.

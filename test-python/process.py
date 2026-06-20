@@ -49,6 +49,9 @@ def cargar_tickets(input_file=INPUT_FILE):
 
 
 def cargar_columnas(input_file):
+    if hasattr(input_file, "seek"):
+        input_file.seek(0)
+
     df_raw = pd.read_csv(input_file, low_memory=False)
     existing_cols = {
         original: renamed

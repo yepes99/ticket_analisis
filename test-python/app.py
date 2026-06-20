@@ -11,10 +11,26 @@ st.set_page_config(page_title="Dashboard Jira", layout="wide")
 # CARGA DE DATOS
 # =========================
 @st.cache_data
-def load_data():
-    return cargar_tickets()
+def load_data(uploaded_file):
+    return cargar_tickets(uploaded_file)
 
-df = load_data()
+st.sidebar.title("Carga de datos")
+uploaded_file = st.sidebar.file_uploader(
+    "Sube el CSV de tickets",
+    type=["csv"],
+    help="El archivo se procesa en memoria y no se guarda en el repositorio.",
+)
+
+if uploaded_file is None:
+    st.title("ðŸ“Š Dashboard Jira")
+    st.info("Sube un archivo CSV desde la barra lateral para generar el dashboard.")
+    st.stop()
+
+try:
+    df = load_data(uploaded_file)
+except Exception as exc:
+    st.error(f"No se pudo procesar el CSV: {exc}")
+    st.stop()
 
 # =========================
 # FILTROS
