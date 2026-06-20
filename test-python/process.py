@@ -1,10 +1,16 @@
 from pathlib import Path
+import unicodedata
 
 import pandas as pd
 
 from categorias import completar_categorias
 from cliente import completar_cliente
 from sla import completar_sla
+
+def normalize_str(value):
+    value = str(value).strip().lower()
+    value = unicodedata.normalize("NFKD", value)
+    return "".join(ch for ch in value if not unicodedata.combining(ch))
 
 
 
@@ -52,12 +58,17 @@ def cargar_columnas(input_file):
     if hasattr(input_file, "seek"):
         input_file.seek(0)
 
-    df_raw = pd.read_csv(input_file, low_memory=False)
-    existing_cols = {
-        original: renamed
-        for original, renamed in COLUMN_MAPPING.items()
-        if original in df_raw.columns
-    }
+    df_raw = pd.read_csv(input_file, low_memory=False, encoding="utf-8", encoding_errors="ignore")
+    normalized_headers = {normalize_str(col): col for col in df_raw.columns}
+
+    existing_cols = {}
+    for original, renamed in COLUMN_MAPPING.items():
+        normalized_key = normalize_str(original)
+        if normalized_key in normalized_headers:
+            existing_cols[normalized_headers[normalized_key]] = renamed
+
+    if not existing_cols:
+        raise ValueError("No se encontraron columnas válidas en el CSV. Revisa la cabecera del archivo.")
 
     return df_raw[list(existing_cols.keys())].rename(columns=existing_cols).copy()
 

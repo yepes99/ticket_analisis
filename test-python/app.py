@@ -2,40 +2,116 @@ import pandas as pd
 import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
-from process import cargar_tickets
 from datetime import datetime
+import os
+from process import cargar_tickets
 
+# =========================
+# CONFIG
+# =========================
 st.set_page_config(page_title="Dashboard Jira", layout="wide")
+
+# =========================
+# LOGIN
+# =========================
+def login():
+    st.markdown(
+        """
+        <style>
+        .login-box {
+            max-width: 420px;
+            margin: auto;
+            padding: 2.5rem;
+            border-radius: 14px;
+            background-color: #0e1117;
+            border: 1px solid #262730;
+            text-align: center;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
+    st.markdown("<div class='login-box'>", unsafe_allow_html=True)
+
+    st.title("🔐 Dashboard Jira Pro")
+    st.caption("Introduce tus credenciales para acceder")
+
+    username = st.text_input("👤 Usuario", placeholder="Usuario")
+    password = st.text_input("🔑 Contraseña", type="password", placeholder="Contraseña")
+
+    col1, col2 = st.columns(2)
+
+    login_btn = col1.button("Entrar", use_container_width=True)
+    col2.button("Limpiar", use_container_width=True)
+
+    if login_btn:
+        if username == st.secrets["APP_USER"] and password == st.secrets["APP_PASSWORD"]:
+            st.session_state["auth"] = True
+            st.rerun()
+        else:
+            st.error("❌ Usuario o contraseña incorrectos")
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+if "auth" not in st.session_state:
+    login()
+    st.stop()
+
+# =========================
+# SIDEBAR
+# =========================
+st.sidebar.markdown("## 📁 Carga de datos")
+st.sidebar.caption("Sube tu CSV de tickets")
+
+uploaded_file = st.sidebar.file_uploader(
+    "Arrastra o selecciona el archivo",
+    type=["csv"],
+    label_visibility="collapsed"
+)
+
+st.sidebar.markdown("---")
+st.sidebar.markdown("🔒 Datos procesados en memoria")
+
+if uploaded_file is None:
+    st.title("📊 Dashboard Jira Pro")
+    st.info("Sube un CSV para comenzar")
+    st.stop()
 
 # =========================
 # CARGA DE DATOS
 # =========================
 @st.cache_data
-def load_data(uploaded_file):
-    return cargar_tickets(uploaded_file)
-
-st.sidebar.title("Carga de datos")
-uploaded_file = st.sidebar.file_uploader(
-    "Sube el CSV de tickets",
-    type=["csv"],
-    help="El archivo se procesa en memoria y no se guarda en el repositorio.",
-)
-
-if uploaded_file is None:
-    st.title("ðŸ“Š Dashboard Jira")
-    st.info("Sube un archivo CSV desde la barra lateral para generar el dashboard.")
-    st.stop()
+def load_data(file):
+    if hasattr(file, "seek"):
+        file.seek(0)
+    return cargar_tickets(file)
 
 try:
     df = load_data(uploaded_file)
 except Exception as exc:
-    st.error(f"No se pudo procesar el CSV: {exc}")
+    st.error(f"❌ Error cargando CSV: {exc}")
+    if hasattr(exc, 'args') and exc.args:
+        st.write("Revisa la cabecera del CSV y los nombres de columna esperados.")
+    st.stop()
+
+# =========================
+# VALIDACIÓN
+# =========================
+required_cols = ["cliente", "asignado_a", "size"]
+
+missing = [c for c in required_cols if c not in df.columns]
+
+if missing:
+    st.error(f"❌ Faltan columnas: {missing}")
+    st.write("Columnas detectadas:", df.columns.tolist())
     st.stop()
 
 # =========================
 # FILTROS
 # =========================
-st.sidebar.title("Filtros")
+st.sidebar.markdown("## 🔎 Filtros")
 
 clientes = st.sidebar.multiselect(
     "Cliente",
@@ -66,39 +142,17 @@ if sizes:
 # =========================
 # HEADER
 # =========================
-st.title("📊 Dashboard Jira")
+st.title("📊 Dashboard Jira Pro")
 
 fecha_dashboard = datetime.now().strftime("%d/%m/%Y %H:%M")
-
-fecha_datos = None
-if "fecha_actualizacion" in df.columns and df["fecha_actualizacion"].notna().any():
-    fecha_datos = df["fecha_actualizacion"].max()
-
-if fecha_datos is not None:
-    st.caption(
-        f"Dashboard generado el {fecha_dashboard} | "
-        f"Datos actualizados hasta: {fecha_datos.strftime('%d/%m/%Y %H:%M')}"
-    )
-else:
-    st.caption(f"Dashboard generado el {fecha_dashboard}")
+st.caption(f"Dashboard generado el {fecha_dashboard}")
 
 # =========================
-# KPI SLA PRO
+# KPI SLA
 # =========================
 sla_prioridad = round(filtered["sla_prioridad_cumple"].mean() * 100, 1)
 sla_size = round(filtered["sla_size_cumple"].mean() * 100, 1)
 sla_global = round(filtered["sla_global_cumple"].mean() * 100, 1)
-
-riesgo_sla = int(
-    ((filtered["sla_prioridad_cumple"] == 0) |
-     (filtered["sla_size_cumple"] == 0)).sum()
-)
-
-tiempo_medio = (
-    round(filtered["dias_resolucion"].mean(), 1)
-    if filtered["dias_resolucion"].notna().any()
-    else 0
-)
 
 # =========================
 # KPIs
@@ -140,7 +194,7 @@ if not sla_size_df.empty:
     st.plotly_chart(fig, use_container_width=True)
 
 # =========================
-# RANKING TÉCNICOS
+# RANKING
 # =========================
 st.subheader("Ranking Técnicos")
 
