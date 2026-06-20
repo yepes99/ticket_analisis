@@ -7,6 +7,7 @@ from cliente import completar_cliente
 from sla import completar_sla
 
 
+
 INPUT_FILE = Path(__file__).with_name("data.csv")
 DATE_FORMAT = "%d/%b/%y %I:%M %p"
 
