@@ -90,7 +90,7 @@ def render_filters(df):
         df (pd.DataFrame): DataFrame para obtener valores únicos
         
     Returns:
-        tuple: (clientes_filter, asignadores_filter, sizes_filter)
+        tuple: (clientes_filter, asignadores_filter, sizes_filter, date_range)
     """
     st.sidebar.markdown("## Filtros")
 
@@ -109,10 +109,20 @@ def render_filters(df):
         sorted(df["size"].dropna().unique()),
     )
 
-    return clientes, asignadores, sizes
+    min_date = df["fecha_creacion"].min().date()
+    max_date = df["fecha_creacion"].max().date()
+
+    date_range = st.sidebar.date_input(
+        "Rango de fecha de creación",
+        value=(min_date, max_date),
+        min_value=min_date,
+        max_value=max_date,
+    )
+
+    return clientes, asignadores, sizes, date_range
 
 
-def apply_filters(df, clientes=None, asignadores=None, sizes=None):
+def apply_filters(df, clientes=None, asignadores=None, sizes=None, date_range=None):
     """
     Aplica filtros al DataFrame.
     
@@ -121,6 +131,7 @@ def apply_filters(df, clientes=None, asignadores=None, sizes=None):
         clientes (list, optional): Lista de clientes a filtrar
         asignadores (list, optional): Lista de técnicos a filtrar
         sizes (list, optional): Lista de sizes a filtrar
+        date_range (tuple, optional): Rango de fechas para fecha_creacion
         
     Returns:
         pd.DataFrame: DataFrame filtrado
@@ -135,5 +146,12 @@ def apply_filters(df, clientes=None, asignadores=None, sizes=None):
 
     if sizes:
         filtered = filtered[filtered["size"].isin(sizes)]
+
+    if date_range and len(date_range) == 2:
+        start_date, end_date = date_range
+        filtered = filtered[
+            (filtered["fecha_creacion"].dt.date >= start_date)
+            & (filtered["fecha_creacion"].dt.date <= end_date)
+        ]
 
     return filtered

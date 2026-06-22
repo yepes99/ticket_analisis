@@ -5,6 +5,7 @@ Componentes reutilizables de interfaz de usuario.
 from html import escape
 import streamlit as st
 from datetime import datetime
+from uuid import uuid4
 
 
 def section_title(title, detail=None):
@@ -132,7 +133,7 @@ def render_login_form():
         return username, password, col1, col2
 
 
-def render_chart_wrapper(fig, use_container_width=True):
+def render_chart_wrapper(fig, use_container_width=True, key=None):
     """
     Renderiza un gráfico dentro de un wrapper estilizado.
     
@@ -141,5 +142,26 @@ def render_chart_wrapper(fig, use_container_width=True):
         use_container_width (bool): Usa todo el ancho del contenedor
     """
     st.markdown("<div class='chart-wrap'>", unsafe_allow_html=True)
-    st.plotly_chart(fig, use_container_width=use_container_width, config={"displayModeBar": False, "responsive": True})
+    # Generar key único si no se proporciona: usar título de la figura cuando exista
+    if key is None:
+        title_text = None
+        try:
+            title_text = getattr(getattr(fig, "layout", None), "title", None)
+            if title_text is not None:
+                title_text = getattr(title_text, "text", None)
+        except Exception:
+            title_text = None
+
+        if title_text:
+            safe = str(title_text).strip().replace(" ", "_").replace("/", "_")
+            key = f"plotly_{safe}"
+        else:
+            key = f"plotly_{uuid4().hex}"
+
+    st.plotly_chart(
+        fig,
+        use_container_width=use_container_width,
+        config={"displayModeBar": False, "responsive": True},
+        key=key,
+    )
     st.markdown("</div>", unsafe_allow_html=True)

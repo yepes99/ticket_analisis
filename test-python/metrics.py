@@ -28,23 +28,87 @@ def calculate_sla_kpis(df):
     Calcula los KPIs principales de SLA.
     
     - tickets_resueltos: Conteo de tickets donde estado = "Finalizada"
-    - total_tickets: Total de tickets en el dataset
-    
-    Args:
-        df (pd.DataFrame): DataFrame filtrado
-        
-    Returns:
-        dict: KPIs calculados
+    - tickets_abiertos: Tickets que no están finalizados
+    - tickets_incumplidos: Tickets que no cumplen SLA global
+    - tickets_en_riesgo: Tickets en riesgo de incumplir SLA por prioridad
+    - dias_resolucion_promedio: Promedio de días de resolución
     """
+    total_tickets = len(df)
+    tickets_resueltos = int(df["resuelto"].sum()) if "resuelto" in df else 0
+    dias_promedio = 0.0
+    if "dias_resolucion" in df and not df["dias_resolucion"].dropna().empty:
+        dias_promedio = round(df["dias_resolucion"].mean(skipna=True), 1)
+
     return {
         "sla_prioridad": pct(df["sla_prioridad_cumple"]),
         "sla_size": pct(df["sla_size_cumple"]),
         "sla_global": pct(df["sla_global_cumple"]),
-        "tickets_resueltos": int(df["resuelto"].sum()) if "resuelto" in df else 0,
-        "total_tickets": len(df),
+        "tickets_resueltos": tickets_resueltos,
+        "tickets_abiertos": total_tickets - tickets_resueltos,
+        "tickets_incumplidos": int((df["sla_global_cumple"] == 0).sum()),
+        "tickets_en_riesgo": int(df["en_riesgo_sla"].sum()) if "en_riesgo_sla" in df else 0,
+        "dias_resolucion_promedio": dias_promedio,
+        "total_tickets": total_tickets,
         "total_clientes": df["cliente"].nunique(),
         "total_tecnicos": df["asignado_a"].nunique(),
     }
+
+
+def calculate_ticket_trends(df):
+    """
+    Genera una serie temporal de tickets creados y resueltos.
+    """
+    created = df.groupby(df["fecha_creacion"].dt.to_period("D")).size().rename("creados")
+    resolved = (
+        df[df["fecha_resolucion"].notna()]
+        .groupby(df["fecha_resolucion"].dt.to_period("D"))
+        .size()
+        .rename("resueltos")
+    )
+
+    trend = pd.concat([created, resolved], axis=1).fillna(0)
+    trend.index = trend.index.to_timestamp()
+    trend.index.name = "fecha"
+    trend = trend.reset_index()
+    trend["creados"] = trend["creados"].astype(int)
+    trend["resueltos"] = trend["resueltos"].astype(int)
+
+    return trend
+
+
+def calculate_status_summary(df):
+    """
+    Calcula el resumen de tickets por estado.
+    """
+    return (
+        df["estado"].fillna("Sin estado")
+        .value_counts()
+        .reset_index(name="tickets")
+        .rename(columns={"index": "estado"})
+    )
+
+
+def calculate_priority_summary(df):
+    """
+    Calcula el resumen de tickets por prioridad.
+    """
+    priority_order = ["Highest", "High", "Medium", "Low", "Lowest"]
+    summary = (
+        df["prioridad"].fillna("Sin prioridad")
+        .value_counts()
+        .reset_index(name="tickets")
+        .rename(columns={"index": "prioridad"})
+    )
+    summary["orden"] = summary["prioridad"].apply(lambda x: priority_order.index(x) if x in priority_order else len(priority_order))
+    return summary.sort_values(["orden", "tickets"], ascending=[True, False]).drop(columns=["orden"])
+
+
+def calculate_technician_sla_summary(df, top_n=15):
+    """
+    Calcula el resumen de SLA por técnico para display en gráfico.
+    """
+    ranking = calculate_technician_ranking(df)
+    return ranking.head(top_n)
 
 
 def calculate_sla_size_comparison(df):
