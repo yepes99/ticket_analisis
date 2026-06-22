@@ -6,6 +6,7 @@ y renderizado de visualizaciones.
 """
 
 from datetime import datetime
+from io import BytesIO
 import streamlit as st
 
 # Imports internos
@@ -122,9 +123,15 @@ st.sidebar.download_button(
 )
 
 pdf_bytes = generate_pdf_report(kpis_export, clientes_export, tech_sla_export)
+if isinstance(pdf_bytes, str):
+    pdf_bytes = pdf_bytes.encode("latin-1")
+elif isinstance(pdf_bytes, bytearray):
+    pdf_bytes = bytes(pdf_bytes)
+
+pdf_buffer = BytesIO(pdf_bytes) if isinstance(pdf_bytes, (bytes, bytearray)) else pdf_bytes
 st.sidebar.download_button(
     "Descargar PDF",
-    data=pdf_bytes,
+    data=pdf_buffer,
     file_name=f"reporte_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
     mime="application/pdf",
 )

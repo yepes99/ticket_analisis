@@ -135,6 +135,12 @@ def generate_pdf_report(kpis, top_clients, top_tech):
         )
 
     output_data = pdf.output(dest="S")
+
     if isinstance(output_data, str):
         return output_data.encode("latin-1")
+    if isinstance(output_data, bytearray):
+        return bytes(output_data)
+    if hasattr(output_data, "read"):
+        output_data.seek(0)
+        return output_data.read()
     return output_data
