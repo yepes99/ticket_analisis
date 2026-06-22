@@ -15,14 +15,14 @@ Este proyecto procesa y analiza tickets a partir de un archivo CSV subido desde 
 
 ```text
 test-python/
-├── app.py            # Interfaz Streamlit
-├── process.py        # Logica de procesamiento
-├── categorias.py     # Clasificacion de categorias
-├── cliente.py        # Normalizacion de cliente
-├── sla.py            # Calculo de SLAs
-├── requirements.txt  # Dependencias
-└── README.md
-```
+- app.py (orquestador principal)
+- config.py (configuración, constantes y colores)
+- styles.py (CSS)
+- ui_components.py (funciones de UI reutilizables)
+- auth.py (autenticación)
+- data.py (carga y validación de datos)
+- metrics.py (cálculo de KPIs)
+- charts.py (visualizaciones)
 
 ## Instalacion
 

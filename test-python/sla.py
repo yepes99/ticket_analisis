@@ -28,6 +28,14 @@ DEFAULT_SLA_HORAS = 24
 # MÉTRICAS BASE
 # =========================
 def completar_metricas_resolucion(df):
+    """
+    Calcula métricas de resolución de tickets.
+    
+    Un ticket se considera RESUELTO si:
+    - Su Estado es "Finalizada"
+    
+    (Alternativa: basarse en fecha_resolucion, pero usar Estado es más confiable)
+    """
     df = df.copy()
 
     df["horas_resolucion"] = (
@@ -41,7 +49,8 @@ def completar_metricas_resolucion(df):
         np.nan,
     )
 
-    df["resuelto"] = df["fecha_resolucion"].notna().astype(int)
+    # Resuelto si el Estado es "Finalizada"
+    df["resuelto"] = (df["estado"] == "Finalizada").astype(int)
 
     df["dias_abierto"] = np.where(
         df["fecha_resolucion"].isna(),
