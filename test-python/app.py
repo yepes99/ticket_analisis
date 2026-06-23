@@ -13,7 +13,7 @@ import streamlit as st
 import config
 from styles import apply_styles
 from auth import check_authentication
-from data import load_and_validate_data, show_welcome_if_no_file, render_filters, apply_filters
+from data import load_and_validate_data, show_welcome_if_no_file
 from report import generate_excel_report, generate_pdf_report
 from ui_components import (
     render_hero_header,
@@ -87,11 +87,7 @@ if uploaded_file is None:
 df = load_and_validate_data(uploaded_file)
 
 
-# =========================
-# FILTROS
-# =========================
-clientes, asignadores, sizes, date_range = render_filters(df)
-filtered = apply_filters(df, clientes, asignadores, sizes, date_range)
+filtered = df
 
 # =========================
 # EXPORTAR
