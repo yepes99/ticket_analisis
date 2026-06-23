@@ -570,6 +570,24 @@ button[role="button"] *,
     fill: #ffffff !important;
 }
 
+/* Botones dentro del sidebar */
+[data-testid="stSidebar"] button,
+[data-testid="stSidebar"] .stButton > button,
+[data-testid="stSidebar"] [data-baseweb="button"] {
+    background: linear-gradient(180deg, var(--brand) 0%, #227bd0 100%) !important;
+    background-color: var(--brand) !important;
+    color: #ffffff !important;
+    border: 1px solid var(--brand) !important;
+}
+
+[data-testid="stSidebar"] button *,
+[data-testid="stSidebar"] .stButton > button *,
+[data-testid="stSidebar"] [data-baseweb="button"] * {
+    color: #ffffff !important;
+    fill: #ffffff !important;
+}
+
+
 </style>
 """
 
