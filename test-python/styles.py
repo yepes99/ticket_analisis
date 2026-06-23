@@ -541,6 +541,35 @@ table tbody tr:hover {
         grid-template-columns: 1fr;
     }
 }
+
+/* Forzar estilo de botones en todos los navegadores */
+button:not(:disabled),
+button[role="button"],
+.stButton > button:not(:disabled),
+[data-testid="stButton"] button:not(:disabled) {
+    background: linear-gradient(180deg, var(--brand) 0%, #227bd0 100%) !important;
+    background-color: var(--brand) !important;
+    color: #ffffff !important;
+    border: 1px solid var(--brand) !important;
+}
+
+button:not(:disabled):hover,
+button[role="button"]:hover,
+.stButton > button:not(:disabled):hover,
+[data-testid="stButton"] button:not(:disabled):hover {
+    background: linear-gradient(180deg, var(--brand-strong) 0%, #3490e6 100%) !important;
+    background-color: var(--brand-strong) !important;
+    color: #ffffff !important;
+}
+
+button:not(:disabled) *,
+button[role="button"] *,
+.stButton > button:not(:disabled) *,
+[data-testid="stButton"] button:not(:disabled) * {
+    color: #ffffff !important;
+    fill: #ffffff !important;
+}
+
 </style>
 """
 
