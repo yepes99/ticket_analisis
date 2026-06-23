@@ -60,18 +60,18 @@ html, body, [data-testid="stAppViewContainer"] {
 
 .stButton > button {
     border-radius: 8px;
-    border: 1px solid var(--brand);
-    background: linear-gradient(180deg, var(--brand) 0%, #227bd0 100%);
-    color: #06101d;
-    font-weight: 700;
+    border: 1px solid var(--brand) !important;
+    background: linear-gradient(180deg, var(--brand) 0%, #227bd0 100%) !important;
+    color: white !important;
+    font-weight: 700 !important;
     min-height: 2.75rem;
     transition: all 160ms ease;
 }
 
 .stButton > button:hover {
-    border-color: var(--brand-strong);
-    background: linear-gradient(180deg, var(--brand-strong) 0%, #3490e6 100%);
-    color: #06101d;
+    border-color: var(--brand-strong) !important;
+    background: linear-gradient(180deg, var(--brand-strong) 0%, #3490e6 100%) !important;
+    color: white !important;
     box-shadow: 0 12px 28px rgba(70, 166, 255, 0.24);
 }
 
@@ -217,6 +217,21 @@ label,
     border-radius: 8px;
     overflow: hidden;
     box-shadow: var(--shadow);
+    background: var(--surface) !important;
+}
+
+.stDataFrame td,
+.stDataFrame th {
+    background: var(--surface) !important;
+    color: var(--ink) !important;
+}
+
+.stDataFrame tr {
+    background: var(--surface) !important;
+}
+
+.stDataFrame tr:hover {
+    background: var(--surface-soft) !important;
 }
 
 .kpi-grid {
@@ -296,6 +311,49 @@ div[data-testid="stAlert"] {
     background: #101823;
     border: 1px solid var(--line);
     color: var(--ink-soft);
+}
+
+/* Mejorar compatibilidad con tablas en diferentes navegadores */
+table {
+    background: var(--surface) !important;
+    color: var(--ink) !important;
+}
+
+table thead {
+    background: var(--surface-soft) !important;
+}
+
+table thead th {
+    background: var(--surface-soft) !important;
+    color: var(--ink) !important;
+    border-color: var(--line) !important;
+}
+
+table tbody tr {
+    background: var(--surface) !important;
+}
+
+table tbody td {
+    background: var(--surface) !important;
+    color: var(--ink) !important;
+    border-color: var(--line) !important;
+}
+
+table tbody tr:hover {
+    background: var(--surface-muted) !important;
+}
+
+/* Compatibilidad con modo oscuro del navegador */
+@media (prefers-color-scheme: dark) {
+    .stButton > button {
+        color: white !important;
+    }
+    
+    .stDataFrame,
+    table {
+        background: var(--surface) !important;
+        color: var(--ink) !important;
+    }
 }
 
 @media (max-width: 900px) {
