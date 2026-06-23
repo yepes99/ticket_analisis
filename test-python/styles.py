@@ -648,16 +648,26 @@ table tbody tr:hover {
 
 [data-baseweb="menu"] li,
 [data-baseweb="menu"] [role="option"],
-[role="listbox"] [role="option"] {
+[role="listbox"] [role="option"],
+[role="listbox"] [role="option"] > div,
+[role="listbox"] [role="option"] > div > div,
+[data-baseweb="menu"] [role="option"] > div,
+[data-baseweb="menu"] [role="option"] > div > div {
     background: var(--surface) !important;
+    background-color: var(--surface) !important;
     color: var(--ink) !important;
 }
 
 [data-baseweb="menu"] li:hover,
 [data-baseweb="menu"] [role="option"]:hover,
 [role="listbox"] [role="option"]:hover,
-[role="option"][aria-selected="true"] {
+[role="listbox"] [role="option"]:hover > div,
+[role="listbox"] [role="option"]:hover > div > div,
+[role="option"][aria-selected="true"],
+[role="option"][aria-selected="true"] > div,
+[role="option"][aria-selected="true"] > div > div {
     background: var(--surface-muted) !important;
+    background-color: var(--surface-muted) !important;
     color: var(--ink) !important;
 }
 
