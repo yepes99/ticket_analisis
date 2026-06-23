@@ -42,6 +42,21 @@ COLUMN_MAPPING = {
 }
 
 DATE_FIELDS = ["fecha_creacion", "fecha_actualizacion", "fecha_resolucion"]
+SPANISH_MONTHS = {
+    "ene": "Jan",
+    "feb": "Feb",
+    "mar": "Mar",
+    "abr": "Apr",
+    "may": "May",
+    "jun": "Jun",
+    "jul": "Jul",
+    "ago": "Aug",
+    "sep": "Sep",
+    "sept": "Sep",
+    "oct": "Oct",
+    "nov": "Nov",
+    "dic": "Dec",
+}
 
 
 def cargar_tickets(input_file=INPUT_FILE):
@@ -78,9 +93,18 @@ def convertir_fechas(df):
 
     for col in DATE_FIELDS:
         if col in df.columns:
-            df[col] = pd.to_datetime(df[col], format=DATE_FORMAT, errors="coerce")
+            df[col] = parse_jira_date(df[col])
 
     return df
+
+
+def parse_jira_date(series):
+    values = series.astype("string").str.strip().str.lower()
+
+    for spanish, english in SPANISH_MONTHS.items():
+        values = values.str.replace(f"/{spanish}/", f"/{english}/", regex=False)
+
+    return pd.to_datetime(values, format=DATE_FORMAT, errors="coerce")
 
 
 def completar_fechas_analiticas(df):
