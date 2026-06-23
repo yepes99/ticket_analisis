@@ -58,21 +58,87 @@ html, body, [data-testid="stAppViewContainer"] {
     border-color: rgba(255,255,255,0.12);
 }
 
-.stButton > button {
-    border-radius: 8px;
-    border: 1px solid var(--brand) !important;
-    background: linear-gradient(180deg, var(--brand) 0%, #227bd0 100%) !important;
-    color: white !important;
-    font-weight: 700 !important;
-    min-height: 2.75rem;
-    transition: all 160ms ease;
+/* Reset CSS global para botones */
+*[role="button"],
+button,
+input[type="button"],
+input[type="submit"] {
+    all: revert !important;
 }
 
-.stButton > button:hover {
+/* Estilos robustos para botones en todos los navegadores */
+.stButton > button,
+button[data-testid="baseButton-primary"],
+button[data-testid="baseButton-secondary"],
+.stButton button,
+[data-testid="stButton"] button,
+*[role="button"] {
+    border-radius: 8px !important;
+    border: 1px solid var(--brand) !important;
+    background: linear-gradient(180deg, var(--brand) 0%, #227bd0 100%) !important;
+    background-color: var(--brand) !important;
+    color: #ffffff !important;
+    fill: #ffffff !important;
+    font-weight: 700 !important;
+    min-height: 2.75rem !important;
+    transition: all 160ms ease !important;
+    text-shadow: none !important;
+    box-shadow: none !important;
+    opacity: 1 !important;
+}
+
+.stButton > button:hover,
+button[data-testid="baseButton-primary"]:hover,
+button[data-testid="baseButton-secondary"]:hover,
+.stButton button:hover,
+[data-testid="stButton"] button:hover,
+*[role="button"]:hover {
     border-color: var(--brand-strong) !important;
     background: linear-gradient(180deg, var(--brand-strong) 0%, #3490e6 100%) !important;
-    color: white !important;
-    box-shadow: 0 12px 28px rgba(70, 166, 255, 0.24);
+    background-color: var(--brand-strong) !important;
+    color: #ffffff !important;
+    fill: #ffffff !important;
+    box-shadow: 0 12px 28px rgba(70, 166, 255, 0.24) !important;
+}
+
+/* Asegurar que el texto del botón sea siempre blanco */
+.stButton > button span,
+button[data-testid="baseButton-primary"] span,
+button[data-testid="baseButton-secondary"] span,
+.stButton button span,
+[data-testid="stButton"] button span,
+*[role="button"] span {
+    color: #ffffff !important;
+    fill: #ffffff !important;
+}
+
+/* Estilos para SVG dentro de botones */
+.stButton > button svg,
+button[data-testid="baseButton-primary"] svg,
+button[data-testid="baseButton-secondary"] svg,
+.stButton button svg,
+[data-testid="stButton"] button svg {
+    color: #ffffff !important;
+    fill: #ffffff !important;
+    stroke: #ffffff !important;
+}
+
+/* Estilos para SVG dentro de botones */
+.stButton > button svg,
+button[data-testid="baseButton-primary"] svg,
+button[data-testid="baseButton-secondary"] svg,
+.stButton button svg,
+[data-testid="stButton"] button svg {
+    color: #ffffff !important;
+    fill: #ffffff !important;
+    stroke: #ffffff !important;
+}
+
+/* Extra specificity para casos edge */
+.stButton > button:not(:disabled),
+.stButton > button[disabled="false"],
+button[disabled="false"] {
+    color: #ffffff !important;
 }
 
 .stTextInput input,
@@ -345,8 +411,25 @@ table tbody tr:hover {
 
 /* Compatibilidad con modo oscuro del navegador */
 @media (prefers-color-scheme: dark) {
-    .stButton > button {
-        color: white !important;
+    .stButton > button,
+    button[data-testid="baseButton-primary"],
+    button[data-testid="baseButton-secondary"],
+    .stButton button,
+    [data-testid="stButton"] button,
+    *[role="button"] {
+        color: #ffffff !important;
+        background: linear-gradient(180deg, var(--brand) 0%, #227bd0 100%) !important;
+        background-color: var(--brand) !important;
+    }
+    
+    .stButton > button span,
+    button[data-testid="baseButton-primary"] span,
+    button[data-testid="baseButton-secondary"] span,
+    .stButton button span,
+    [data-testid="stButton"] button span,
+    *[role="button"] span {
+        color: #ffffff !important;
+        fill: #ffffff !important;
     }
     
     .stDataFrame,
@@ -447,6 +530,12 @@ table tbody tr:hover {
 
     .stButton > button {
         min-height: 2.9rem;
+        color: #ffffff !important;
+        background: linear-gradient(180deg, var(--brand) 0%, #227bd0 100%) !important;
+    }
+
+    .stButton > button span {
+        color: #ffffff !important;
     }
 
     .kpi-grid,
