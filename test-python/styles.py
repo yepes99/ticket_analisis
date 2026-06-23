@@ -126,6 +126,11 @@ button[data-testid="baseButton-secondary"],
     color: var(--ink);
 }
 
+[data-baseweb="select"] *,
+[data-baseweb="select"] input {
+    color: var(--ink) !important;
+}
+
 [data-testid="stDateInput"] [data-baseweb="input"] *,
 [data-testid="stDateInput"] input,
 [data-testid="stFileUploader"] section *,
@@ -625,7 +630,34 @@ table tbody tr:hover {
 }
 
 [data-baseweb="calendar"] *,
-[data-baseweb="popover"] * {
+[data-baseweb="popover"] *,
+[data-baseweb="menu"] *,
+[role="listbox"] *,
+[role="option"] * {
+    color: var(--ink) !important;
+}
+
+[data-baseweb="popover"] > div,
+[data-baseweb="menu"],
+[role="listbox"] {
+    background: var(--surface) !important;
+    border: 1px solid var(--line) !important;
+    border-radius: 8px !important;
+    box-shadow: var(--shadow) !important;
+}
+
+[data-baseweb="menu"] li,
+[data-baseweb="menu"] [role="option"],
+[role="listbox"] [role="option"] {
+    background: var(--surface) !important;
+    color: var(--ink) !important;
+}
+
+[data-baseweb="menu"] li:hover,
+[data-baseweb="menu"] [role="option"]:hover,
+[role="listbox"] [role="option"]:hover,
+[role="option"][aria-selected="true"] {
+    background: var(--surface-muted) !important;
     color: var(--ink) !important;
 }
 
