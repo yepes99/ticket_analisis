@@ -63,7 +63,9 @@ html, body, [data-testid="stAppViewContainer"] {
 button[data-testid="baseButton-primary"],
 button[data-testid="baseButton-secondary"],
 .stButton button,
-[data-testid="stButton"] button {
+[data-testid="stButton"] button,
+[data-testid="stDownloadButton"] button,
+[data-testid="stFileUploader"] button {
     border-radius: 8px !important;
     border: 1px solid var(--brand) !important;
     background: linear-gradient(180deg, var(--brand) 0%, #227bd0 100%) !important;
@@ -78,7 +80,9 @@ button[data-testid="baseButton-secondary"],
 button[data-testid="baseButton-primary"]:hover,
 button[data-testid="baseButton-secondary"]:hover,
 .stButton button:hover,
-[data-testid="stButton"] button:hover {
+[data-testid="stButton"] button:hover,
+[data-testid="stDownloadButton"] button:hover,
+[data-testid="stFileUploader"] button:hover {
     border-color: var(--brand-strong) !important;
     background: linear-gradient(180deg, var(--brand-strong) 0%, #3490e6 100%) !important;
     color: #ffffff !important;
@@ -90,7 +94,9 @@ button[data-testid="baseButton-secondary"]:hover,
 button[data-testid="baseButton-primary"] span,
 button[data-testid="baseButton-secondary"] span,
 .stButton button span,
-[data-testid="stButton"] button span {
+[data-testid="stButton"] button span,
+[data-testid="stDownloadButton"] button span,
+[data-testid="stFileUploader"] button span {
     color: #ffffff !important;
 }
 
@@ -103,17 +109,35 @@ button {
 button[data-testid="baseButton-primary"],
 button[data-testid="baseButton-secondary"],
 .stButton button,
-[data-testid="stButton"] button {
+[data-testid="stButton"] button,
+[data-testid="stDownloadButton"] button,
+[data-testid="stFileUploader"] button {
     color: #ffffff !important;
 }
 
 .stTextInput input,
 [data-baseweb="select"] > div,
+[data-testid="stDateInput"] [data-baseweb="input"],
+[data-testid="stDateInput"] input,
 [data-testid="stFileUploader"] section {
     background: #0c141f;
     border-radius: 8px;
     border-color: var(--line);
     color: var(--ink);
+}
+
+[data-testid="stDateInput"] [data-baseweb="input"] *,
+[data-testid="stDateInput"] input,
+[data-testid="stFileUploader"] section *,
+[data-testid="stFileUploader"] [data-testid="stFileChip"] *,
+[data-testid="stFileUploader"] .stFileChip * {
+    color: var(--ink) !important;
+}
+
+[data-testid="stFileUploader"] [data-testid="stFileChip"],
+[data-testid="stFileUploader"] .stFileChip {
+    background: var(--surface-soft) !important;
+    border: 1px solid var(--line) !important;
 }
 
 .stTextInput input::placeholder {
@@ -381,7 +405,9 @@ table tbody tr:hover {
     button[data-testid="baseButton-primary"],
     button[data-testid="baseButton-secondary"],
     .stButton button,
-    [data-testid="stButton"] button {
+    [data-testid="stButton"] button,
+    [data-testid="stDownloadButton"] button,
+    [data-testid="stFileUploader"] button {
         color: #ffffff !important;
         background: linear-gradient(180deg, var(--brand) 0%, #227bd0 100%) !important;
     }
@@ -390,7 +416,9 @@ table tbody tr:hover {
     button[data-testid="baseButton-primary"] span,
     button[data-testid="baseButton-secondary"] span,
     .stButton button span,
-    [data-testid="stButton"] button span {
+    [data-testid="stButton"] button span,
+    [data-testid="stDownloadButton"] button span,
+    [data-testid="stFileUploader"] button span {
         color: #ffffff !important;
     }
     
@@ -542,49 +570,80 @@ table tbody tr:hover {
     }
 }
 
-/* Forzar estilo de botones en todos los navegadores */
-button:not(:disabled),
-button[role="button"],
+/* Botones de accion de Streamlit, sin pisar controles internos como calendarios o chips */
 .stButton > button:not(:disabled),
-[data-testid="stButton"] button:not(:disabled) {
+[data-testid="stButton"] button:not(:disabled),
+[data-testid="stDownloadButton"] button:not(:disabled),
+[data-testid="stFileUploader"] button:not(:disabled) {
     background: linear-gradient(180deg, var(--brand) 0%, #227bd0 100%) !important;
     background-color: var(--brand) !important;
     color: #ffffff !important;
     border: 1px solid var(--brand) !important;
 }
 
-button:not(:disabled):hover,
-button[role="button"]:hover,
 .stButton > button:not(:disabled):hover,
-[data-testid="stButton"] button:not(:disabled):hover {
+[data-testid="stButton"] button:not(:disabled):hover,
+[data-testid="stDownloadButton"] button:not(:disabled):hover,
+[data-testid="stFileUploader"] button:not(:disabled):hover {
     background: linear-gradient(180deg, var(--brand-strong) 0%, #3490e6 100%) !important;
     background-color: var(--brand-strong) !important;
     color: #ffffff !important;
 }
 
-button:not(:disabled) *,
-button[role="button"] *,
 .stButton > button:not(:disabled) *,
-[data-testid="stButton"] button:not(:disabled) * {
+[data-testid="stButton"] button:not(:disabled) *,
+[data-testid="stDownloadButton"] button:not(:disabled) *,
+[data-testid="stFileUploader"] button:not(:disabled) * {
     color: #ffffff !important;
     fill: #ffffff !important;
 }
 
 /* Botones dentro del sidebar */
-[data-testid="stSidebar"] button,
 [data-testid="stSidebar"] .stButton > button,
-[data-testid="stSidebar"] [data-baseweb="button"] {
+[data-testid="stSidebar"] [data-testid="stButton"] button,
+[data-testid="stSidebar"] [data-testid="stDownloadButton"] button,
+[data-testid="stSidebar"] [data-testid="stFileUploader"] button {
     background: linear-gradient(180deg, var(--brand) 0%, #227bd0 100%) !important;
     background-color: var(--brand) !important;
     color: #ffffff !important;
     border: 1px solid var(--brand) !important;
 }
 
-[data-testid="stSidebar"] button *,
 [data-testid="stSidebar"] .stButton > button *,
-[data-testid="stSidebar"] [data-baseweb="button"] * {
+[data-testid="stSidebar"] [data-testid="stButton"] button *,
+[data-testid="stSidebar"] [data-testid="stDownloadButton"] button *,
+[data-testid="stSidebar"] [data-testid="stFileUploader"] button * {
     color: #ffffff !important;
     fill: #ffffff !important;
+}
+
+/* Controles BaseWeb: date input, calendario y chip del archivo subido */
+[data-baseweb="calendar"],
+[data-baseweb="popover"] {
+    background: var(--surface) !important;
+    color: var(--ink) !important;
+}
+
+[data-baseweb="calendar"] *,
+[data-baseweb="popover"] * {
+    color: var(--ink) !important;
+}
+
+[data-baseweb="calendar"] button,
+[data-baseweb="popover"] button,
+[data-testid="stFileUploader"] [data-testid="stFileChip"] button,
+[data-testid="stFileUploader"] .stFileChip button {
+    background: transparent !important;
+    border-color: transparent !important;
+    color: var(--ink) !important;
+}
+
+[data-baseweb="calendar"] button:hover,
+[data-baseweb="popover"] button:hover,
+[data-testid="stFileUploader"] [data-testid="stFileChip"] button:hover,
+[data-testid="stFileUploader"] .stFileChip button:hover {
+    background: var(--surface-muted) !important;
+    color: var(--ink) !important;
 }
 
 
