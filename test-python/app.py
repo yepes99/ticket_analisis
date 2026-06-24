@@ -61,7 +61,7 @@ check_authentication()
 # SIDEBAR - CARGA DE DATOS
 # =========================
 st.sidebar.markdown("## Carga de datos")
-st.sidebar.caption("Sube un CSV de tickets para activar el dashboard.")
+st.sidebar.caption("Sube un CSV de tareas para activar el dashboard.")
 
 uploaded_file = st.sidebar.file_uploader(
     "Selecciona un CSV",
@@ -151,7 +151,7 @@ kpis = calculate_sla_kpis(filtered)
 
 kpi_grid(
     [
-        ("Tickets filtrados", f"{kpis['total_tickets']:,}".replace(",", "."), "Volumen actual", ""),
+        ("Tareas filtradas", f"{kpis['total_tickets']:,}".replace(",", "."), "Volumen actual", ""),
         ("SLA prioridad", f"{kpis['sla_prioridad']}%", "Cumplimiento por prioridad", "success"),
         ("SLA size", f"{kpis['sla_size']}%", "Cumplimiento por size", "warning"),
         (
@@ -165,9 +165,9 @@ kpi_grid(
 
 kpi_grid(
     [
-        ("Tickets resueltos", f"{kpis['tickets_resueltos']:,}".replace(",", "."), "Cerrados o completados", "success"),
-        ("Tickets abiertos", f"{kpis['tickets_abiertos']:,}".replace(",", "."), "No finalizados", "warning"),
-        ("Tickets incumplidos", f"{kpis['tickets_incumplidos']:,}".replace(",", "."), "SLA global no cumplido", "danger"),
+        ("Tareas resueltas", f"{kpis['tickets_resueltos']:,}".replace(",", "."), "Cerrados o completados", "success"),
+        ("Tareas abiertas", f"{kpis['tickets_abiertos']:,}".replace(",", "."), "No finalizadas", "warning"),
+        ("Tareas incumplidas", f"{kpis['tickets_incumplidos']:,}".replace(",", "."), "SLA global no cumplido", "danger"),
         ("En riesgo SLA", f"{kpis['tickets_en_riesgo']:,}".replace(",", "."), "Riesgo por prioridad", "warning"),
     ]
 )
@@ -175,7 +175,7 @@ kpi_grid(
 kpi_grid(
     [
         ("Promedio resolución", f"{kpis['dias_resolucion_promedio']} dias", "Media del equipo", ""),
-        ("Clientes", kpis['total_clientes'], "Con tickets visibles", ""),
+        ("Clientes", kpis['total_clientes'], "Con tareas visibles", ""),
         ("Tecnicos", kpis['total_tecnicos'], "Asignados en el filtro", ""),
     ],
     secondary=True,
@@ -185,7 +185,7 @@ kpi_grid(
 # =========================
 # TENDENCIA Y RESOLUCIÓN
 # =========================
-section_title("Evolución y resolución", "Tickets creados, resueltos y tiempos de resolución")
+section_title("Evolución y resolución", "Tareas creadas, resueltos y tiempos de resolución")
 
 trend_df = calculate_ticket_trends(filtered)
 resolution_fig = create_resolution_distribution_chart(filtered)
@@ -218,7 +218,7 @@ if not sla_size_df.empty:
         hide_index=True,
         column_config={
             "size": "Size",
-            "tickets": stcc.NumberColumn("Tickets", format="%d"),
+            "tickets": stcc.NumberColumn("Tareas", format="%d"),
             "objetivo": stcc.NumberColumn("Objetivo SLA", format="%.1f dias"),
             "real": stcc.NumberColumn("Real", format="%.1f dias"),
             "cumplimiento": stcc.ProgressColumn(
@@ -288,7 +288,7 @@ else:
 # =========================
 # CLIENTES TOP
 # =========================
-section_title("Clientes con mas tickets", "Top 20 por volumen")
+section_title("Clientes con mas tareas", "Top 20 por volumen")
 
 clientes_df = calculate_top_clients(filtered, config.TOP_CLIENTES)
 
@@ -309,7 +309,7 @@ if not tech_sla_df.empty:
         hide_index=True,
         column_config={
             "asignado_a": "Tecnico",
-            "tickets": stcc.NumberColumn("Tickets", format="%d"),
+            "tickets": stcc.NumberColumn("Tareas", format="%d"),
             "resueltos": stcc.NumberColumn("Resueltos", format="%d"),
             "sla_size": stcc.ProgressColumn("SLA size", format="%.1f%%", min_value=0, max_value=100),
             "sla_prioridad": stcc.ProgressColumn("SLA prioridad", format="%.1f%%", min_value=0, max_value=100),
@@ -324,7 +324,7 @@ else:
 # =========================
 # CLIENTES TOP
 # =========================
-section_title("Clientes con mas tickets", "Top 20 por volumen")
+section_title("Clientes con mas tareas", "Top 20 por volumen")
 
 if not clientes_df.empty:
     fig = create_top_clients_chart(clientes_df)
@@ -336,7 +336,7 @@ if not clientes_df.empty:
         hide_index=True,
         column_config={
             "cliente": "Cliente",
-            "tickets": stcc.NumberColumn("Tickets", format="%d"),
+            "tareas": stcc.NumberColumn("Tareas", format="%d"),
             "sla": stcc.ProgressColumn("SLA global", format="%.1f%%", min_value=0, max_value=100),
             "tiempo": stcc.NumberColumn("Tiempo medio", format="%.1f dias"),
         },
