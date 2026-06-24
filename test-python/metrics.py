@@ -6,15 +6,6 @@ import pandas as pd
 
 
 def pct(series):
-    """
-    Calcula el porcentaje promedio de una serie.
-    
-    Args:
-        series (pd.Series): Serie a calcular
-        
-    Returns:
-        float: Valor porcentual redondeado a 1 decimal
-    """
     if series.empty:
         return 0.0
     value = series.mean()
@@ -24,15 +15,6 @@ def pct(series):
 
 
 def calculate_sla_kpis(df):
-    """
-    Calcula los KPIs principales de SLA.
-    
-    - tickets_resueltos: Conteo de tickets donde estado = "Finalizada"
-    - tickets_abiertos: Tickets que no están finalizados
-    - tickets_incumplidos: Tickets que no cumplen SLA global
-    - tickets_en_riesgo: Tickets en riesgo de incumplir SLA por prioridad
-    - dias_resolucion_promedio: Promedio de días de resolución
-    """
     total_tickets = len(df)
     tickets_resueltos = int(df["resuelto"].sum()) if "resuelto" in df else 0
     dias_promedio = 0.0
@@ -55,9 +37,6 @@ def calculate_sla_kpis(df):
 
 
 def calculate_ticket_trends(df):
-    """
-    Genera una serie temporal de tickets creados y resueltos.
-    """
     created = df.groupby(df["fecha_creacion"].dt.to_period("D")).size().rename("creados")
     resolved = (
         df[df["fecha_resolucion"].notna()]
@@ -77,9 +56,6 @@ def calculate_ticket_trends(df):
 
 
 def calculate_status_summary(df):
-    """
-    Calcula el resumen de tickets por estado.
-    """
     return (
         df["estado"].fillna("Sin estado")
         .value_counts()
@@ -89,9 +65,6 @@ def calculate_status_summary(df):
 
 
 def calculate_priority_summary(df):
-    """
-    Calcula el resumen de tickets por prioridad.
-    """
     priority_order = ["Highest", "High", "Medium", "Low", "Lowest"]
     summary = (
         df["prioridad"].fillna("Sin prioridad")
@@ -99,28 +72,18 @@ def calculate_priority_summary(df):
         .reset_index(name="tickets")
         .rename(columns={"index": "prioridad"})
     )
-    summary["orden"] = summary["prioridad"].apply(lambda x: priority_order.index(x) if x in priority_order else len(priority_order))
+    summary["orden"] = summary["prioridad"].apply(
+        lambda x: priority_order.index(x) if x in priority_order else len(priority_order)
+    )
     return summary.sort_values(["orden", "tickets"], ascending=[True, False]).drop(columns=["orden"])
 
 
 def calculate_technician_sla_summary(df, top_n=15):
-    """
-    Calcula el resumen de SLA por técnico para display en gráfico.
-    """
     ranking = calculate_technician_ranking(df)
     return ranking.head(top_n)
 
 
 def calculate_sla_size_comparison(df):
-    """
-    Calcula la comparación entre SLA objetivo y tiempo real por size.
-    
-    Args:
-        df (pd.DataFrame): DataFrame filtrado
-        
-    Returns:
-        pd.DataFrame: DataFrame con comparación, vacío si no hay datos
-    """
     sla_size_df = (
         df[df["sla_size_dias"].notna()]
         .groupby("size")
@@ -142,15 +105,6 @@ def calculate_sla_size_comparison(df):
 
 
 def calculate_technician_ranking(df):
-    """
-    Calcula el ranking de técnicos por rendimiento.
-    
-    Args:
-        df (pd.DataFrame): DataFrame filtrado
-        
-    Returns:
-        pd.DataFrame: DataFrame con ranking, vacío si no hay datos
-    """
     ranking = (
         df.groupby("asignado_a")
         .agg(
@@ -173,16 +127,9 @@ def calculate_technician_ranking(df):
     return ranking.sort_values("tickets", ascending=False)
 
 
-def calculate_top_clients(df, top_n=20):
+def calculate_top_clients(df):
     """
-    Calcula los clientes con más tickets.
-    
-    Args:
-        df (pd.DataFrame): DataFrame filtrado
-        top_n (int): Número de clientes top a retornar
-        
-    Returns:
-        pd.DataFrame: DataFrame con top clientes, vacío si no hay datos
+    Devuelve TODOS los clientes del CSV ordenados por volumen de tareas.
     """
     clientes_df = (
         df.groupby("cliente")
@@ -193,7 +140,6 @@ def calculate_top_clients(df, top_n=20):
         )
         .reset_index()
         .sort_values("tickets", ascending=False)
-        .head(top_n)
     )
 
     if not clientes_df.empty:
@@ -201,3 +147,30 @@ def calculate_top_clients(df, top_n=20):
         clientes_df["tiempo"] = clientes_df["tiempo"].round(1)
 
     return clientes_df
+
+
+def calculate_client_ticket_detail(df, cliente):
+    """
+    Devuelve todos los tickets de un cliente concreto con sus métricas de tiempo.
+    """
+    cols_disponibles = [
+        "ticket_id",
+        "resumen",
+        "tipo",
+        "estado",
+        "prioridad",
+        "size",
+        "asignado_a",
+        "fecha_creacion",
+        "fecha_resolucion",
+        "dias_resolucion",
+        "horas_resolucion",
+        "sla_prioridad_cumple",
+        "sla_size_cumple",
+        "sla_global_cumple",
+        "desviacion_sla",
+    ]
+
+    detalle = df[df["cliente"] == cliente].copy()
+    cols = [c for c in cols_disponibles if c in detalle.columns]
+    return detalle[cols].sort_values("fecha_creacion", ascending=False)

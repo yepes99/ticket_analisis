@@ -1,15 +1,11 @@
 """
 Dashboard Jira Pro - Aplicación principal.
-
-Orquestador que integra autenticación, carga de datos, cálculo de métricas
-y renderizado de visualizaciones.
 """
 
 from datetime import datetime
 from io import BytesIO
 import streamlit as st
 
-# Imports internos
 import config
 from styles import apply_styles
 from auth import check_authentication
@@ -26,11 +22,12 @@ from metrics import (
     calculate_sla_kpis,
     calculate_sla_size_comparison,
     calculate_technician_ranking,
+    calculate_technician_sla_summary,
     calculate_top_clients,
     calculate_ticket_trends,
     calculate_status_summary,
     calculate_priority_summary,
-    calculate_technician_sla_summary,
+    calculate_client_ticket_detail,
 )
 from charts import (
     create_sla_comparison_chart,
@@ -85,21 +82,19 @@ if uploaded_file is None:
 # CARGA Y VALIDACIÓN DE DATOS
 # =========================
 df = load_and_validate_data(uploaded_file)
-
-
 filtered = df
+
 
 # =========================
 # EXPORTAR
 # =========================
 st.sidebar.markdown("## Exportar")
 
-# Preparar datos resumidos para el reporte (se usan los mismos cálculos que en el dashboard)
 kpis_export = calculate_sla_kpis(filtered)
 trend_export = calculate_ticket_trends(filtered)
 sla_size_export = calculate_sla_size_comparison(filtered)
 ranking_export = calculate_technician_ranking(filtered)
-clientes_export = calculate_top_clients(filtered, config.TOP_CLIENTES)
+clientes_export = calculate_top_clients(filtered)
 tech_sla_export = calculate_technician_sla_summary(filtered)
 
 excel_bytes = generate_excel_report(
@@ -110,7 +105,6 @@ excel_bytes = generate_excel_report(
     clientes_export,
     tech_sla_export,
 )
-
 st.sidebar.download_button(
     "Descargar Excel",
     data=excel_bytes,
@@ -123,7 +117,6 @@ if isinstance(pdf_bytes, str):
     pdf_bytes = pdf_bytes.encode("latin-1")
 elif isinstance(pdf_bytes, bytearray):
     pdf_bytes = bytes(pdf_bytes)
-
 pdf_buffer = BytesIO(pdf_bytes) if isinstance(pdf_bytes, (bytes, bytearray)) else pdf_bytes
 st.sidebar.download_button(
     "Descargar PDF",
@@ -139,7 +132,7 @@ st.sidebar.download_button(
 fecha_dashboard = datetime.now().strftime(config.DATE_FORMAT)
 render_hero_header(
     title="Dashboard Jira Pro",
-    description="Vista ejecutiva para controlar volumen de tickets, cumplimiento SLA y rendimiento por tecnico, size y cliente.",
+    description="Vista ejecutiva para controlar volumen de tareas, cumplimiento SLA y rendimiento por tecnico, size y cliente.",
     timestamp=fecha_dashboard,
 )
 
@@ -165,7 +158,7 @@ kpi_grid(
 
 kpi_grid(
     [
-        ("Tareas resueltas", f"{kpis['tickets_resueltos']:,}".replace(",", "."), "Cerrados o completados", "success"),
+        ("Tareas resueltas", f"{kpis['tickets_resueltos']:,}".replace(",", "."), "Cerradas o completadas", "success"),
         ("Tareas abiertas", f"{kpis['tickets_abiertos']:,}".replace(",", "."), "No finalizadas", "warning"),
         ("Tareas incumplidas", f"{kpis['tickets_incumplidos']:,}".replace(",", "."), "SLA global no cumplido", "danger"),
         ("En riesgo SLA", f"{kpis['tickets_en_riesgo']:,}".replace(",", "."), "Riesgo por prioridad", "warning"),
@@ -185,7 +178,7 @@ kpi_grid(
 # =========================
 # TENDENCIA Y RESOLUCIÓN
 # =========================
-section_title("Evolución y resolución", "Tareas creadas, resueltos y tiempos de resolución")
+section_title("Evolución y resolución", "Tareas creadas, resueltas y tiempos de resolución")
 
 trend_df = calculate_ticket_trends(filtered)
 resolution_fig = create_resolution_distribution_chart(filtered)
@@ -234,9 +227,9 @@ else:
 
 
 # =========================
-# RESOLUCIÓN
+# DISTRIBUCIÓN DE RESOLUCIÓN
 # =========================
-section_title("Distribución de resolución", "Tiempo de resolución de tickets")
+section_title("Distribución de resolución", "Tiempo de resolución de tareas")
 
 resolution_fig = create_resolution_distribution_chart(filtered)
 render_chart_wrapper(resolution_fig)
@@ -245,7 +238,7 @@ render_chart_wrapper(resolution_fig)
 # =========================
 # ESTADO Y PRIORIDAD
 # =========================
-section_title("Estado y prioridad", "Tickets por estado y por prioridad")
+section_title("Estado y prioridad", "Tareas por estado y por prioridad")
 
 status_df = calculate_status_summary(filtered)
 priority_df = calculate_priority_summary(filtered)
@@ -273,7 +266,7 @@ if not ranking.empty:
         hide_index=True,
         column_config={
             "asignado_a": "Tecnico",
-            "tickets": stcc.NumberColumn("Tickets", format="%d"),
+            "tickets": stcc.NumberColumn("Tareas", format="%d"),
             "resueltos": stcc.NumberColumn("Resueltos", format="%d"),
             "sla_size": stcc.ProgressColumn("SLA size", format="%.1f%%", min_value=0, max_value=100),
             "sla_prioridad": stcc.ProgressColumn("SLA prioridad", format="%.1f%%", min_value=0, max_value=100),
@@ -283,14 +276,6 @@ if not ranking.empty:
     )
 else:
     empty_state("No hay tecnicos con datos para los filtros seleccionados.")
-
-
-# =========================
-# CLIENTES TOP
-# =========================
-section_title("Clientes con mas tareas", "Top 20 por volumen")
-
-clientes_df = calculate_top_clients(filtered, config.TOP_CLIENTES)
 
 
 # =========================
@@ -322,9 +307,11 @@ else:
 
 
 # =========================
-# CLIENTES TOP
+# CLIENTES - RESUMEN GLOBAL
 # =========================
-section_title("Clientes con mas tareas", "Top 20 por volumen")
+section_title("Clientes con mas tareas", "Todos los clientes por volumen, SLA y tiempo medio")
+
+clientes_df = calculate_top_clients(filtered)
 
 if not clientes_df.empty:
     fig = create_top_clients_chart(clientes_df)
@@ -336,10 +323,68 @@ if not clientes_df.empty:
         hide_index=True,
         column_config={
             "cliente": "Cliente",
-            "tareas": stcc.NumberColumn("Tareas", format="%d"),
+            "tickets": stcc.NumberColumn("Tareas", format="%d"),
             "sla": stcc.ProgressColumn("SLA global", format="%.1f%%", min_value=0, max_value=100),
             "tiempo": stcc.NumberColumn("Tiempo medio", format="%.1f dias"),
         },
     )
 else:
     empty_state("No hay clientes con datos para los filtros seleccionados.")
+
+
+# =========================
+# CLIENTES - DETALLE POR CLIENTE
+# =========================
+section_title("Detalle de tareas por cliente", "Selecciona un cliente para ver sus tareas individuales")
+
+clientes_disponibles = sorted(filtered["cliente"].dropna().unique().tolist())
+
+cliente_seleccionado = st.selectbox(
+    "Selecciona un cliente",
+    options=[""] + clientes_disponibles,
+    index=0,
+    format_func=lambda x: "Elige un cliente..." if x == "" else x,
+)
+
+if cliente_seleccionado:
+    detalle_df = calculate_client_ticket_detail(filtered, cliente_seleccionado)
+
+    total = len(detalle_df)
+    resueltos = int(detalle_df["resuelto"].sum()) if "resuelto" in detalle_df.columns else 0
+    tiempo_medio = round(detalle_df["dias_resolucion"].mean(), 1) if "dias_resolucion" in detalle_df.columns else "-"
+    sla_global = round(detalle_df["sla_global_cumple"].mean() * 100, 1) if "sla_global_cumple" in detalle_df.columns else "-"
+
+    kpi_grid(
+        [
+            ("Tareas", str(total), cliente_seleccionado, ""),
+            ("Resueltas", str(resueltos), "Finalizadas", "success"),
+            ("Tiempo medio", f"{tiempo_medio} dias", "Promedio resolución", ""),
+            ("SLA global", f"{sla_global}%", "Cumplimiento", "success" if isinstance(sla_global, float) and sla_global >= 80 else "danger"),
+        ]
+    )
+
+    if not detalle_df.empty:
+        st.dataframe(
+            detalle_df,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "ticket_id": "Ticket",
+                "resumen": "Resumen",
+                "tipo": "Tipo",
+                "estado": "Estado",
+                "prioridad": "Prioridad",
+                "size": "Size",
+                "asignado_a": "Técnico",
+                "fecha_creacion": stcc.DatetimeColumn("Creado", format="DD/MM/YYYY"),
+                "fecha_resolucion": stcc.DatetimeColumn("Resuelto", format="DD/MM/YYYY"),
+                "dias_resolucion": stcc.NumberColumn("Días resolución", format="%.1f dias"),
+                "horas_resolucion": stcc.NumberColumn("Horas resolución", format="%.1f h"),
+                "sla_prioridad_cumple": stcc.CheckboxColumn("SLA prioridad"),
+                "sla_size_cumple": stcc.CheckboxColumn("SLA size"),
+                "sla_global_cumple": stcc.CheckboxColumn("SLA global"),
+                "desviacion_sla": stcc.NumberColumn("Desviación SLA", format="%.1f dias"),
+            },
+        )
+    else:
+        empty_state(f"No hay tareas para {cliente_seleccionado} con los filtros actuales.")
