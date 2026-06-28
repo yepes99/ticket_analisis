@@ -251,18 +251,22 @@ label,
     align-items: end;
     justify-content: space-between;
     gap: 1rem;
-    margin: 1.35rem 0 0.7rem;
+    margin: 2.2rem 0 0.9rem;
+    padding-bottom: 0.6rem;
+    border-bottom: 1px solid var(--line);
 }
 
 .section-title h2 {
     color: var(--ink);
-    font-size: 1.12rem;
+    font-size: 1.5rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
     margin: 0;
 }
 
 .section-title span {
-    color: var(--muted);
-    font-size: 0.88rem;
+    color: var(--ink-soft);
+    font-size: 0.95rem;
 }
 
 .empty-state {
@@ -508,11 +512,11 @@ table tbody tr:hover {
     }
 
     .section-title h2 {
-        font-size: 1rem;
+        font-size: 1.25rem;
     }
 
     .section-title span {
-        font-size: 0.78rem;
+        font-size: 0.85rem;
     }
 
     [data-testid="stMetric"] {

@@ -38,7 +38,25 @@ from charts import (
     create_priority_bar_chart,
     create_technician_sla_chart,
 )
+from backlog_metrics import (
+    calculate_backlog_kpis,
+    calculate_backlog_por_antiguedad,
+    calculate_backlog_por_prioridad,
+    calculate_backlog_por_size,
+    calculate_backlog_detalle,
+)
+from backlog_charts import (
+    create_backlog_antiguedad_chart,
+    create_backlog_prioridad_chart,
+    create_backlog_size_chart,
+)
 import streamlit.column_config as stcc
+
+
+# =========================
+# TÉCNICOS PERMITIDOS
+# =========================
+TECNICOS_PERMITIDOS = ["Leslie Jara", "Carmen Yepes", "Jorge Gallego"]
 
 
 # =========================
@@ -58,7 +76,7 @@ check_authentication()
 # SIDEBAR - CARGA DE DATOS
 # =========================
 st.sidebar.markdown("## Carga de datos")
-st.sidebar.caption("Sube un CSV de tareas para activar el dashboard.")
+st.sidebar.caption("Sube un CSV de tickets exportado desde Jira para activar el dashboard.")
 
 uploaded_file = st.sidebar.file_uploader(
     "Selecciona un CSV",
@@ -67,7 +85,7 @@ uploaded_file = st.sidebar.file_uploader(
 )
 
 st.sidebar.markdown("---")
-st.sidebar.caption("Los datos se procesan en memoria durante la sesion.")
+st.sidebar.caption("Los datos se procesan en memoria durante la sesión y no se almacenan.")
 
 
 # =========================
@@ -79,16 +97,26 @@ if uploaded_file is None:
 
 
 # =========================
-# CARGA Y VALIDACIÓN DE DATOS
+# CARGA DE DATOS
 # =========================
 df = load_and_validate_data(uploaded_file)
-filtered = df
+
+# Backlog: todas las tareas en estado Backlog, sin filtrar por técnico
+backlog_df = df[df["estado"].str.lower() == "backlog"].copy()
+
+# El resto del dashboard: solo los 3 técnicos permitidos
+filtered = df[df["asignado_a"].isin(TECNICOS_PERMITIDOS)].copy()
+
+if filtered.empty:
+    st.warning("No se encontraron tareas asignadas a Leslie Jara, Carmen Yepes o Jorge Gallego en este CSV.")
+    st.stop()
 
 
 # =========================
 # EXPORTAR
 # =========================
 st.sidebar.markdown("## Exportar")
+st.sidebar.caption("Descarga un resumen de los datos actuales.")
 
 kpis_export = calculate_sla_kpis(filtered)
 trend_export = calculate_ticket_trends(filtered)
@@ -131,26 +159,28 @@ st.sidebar.download_button(
 # =========================
 fecha_dashboard = datetime.now().strftime(config.DATE_FORMAT)
 render_hero_header(
-    title="Dashboard Jira Pro",
-    description="Vista ejecutiva para controlar volumen de tareas, cumplimiento SLA y rendimiento por tecnico, size y cliente.",
+    title="Dashboard Web — Equipo de Soporte",
+    description="Seguimiento de tareas, cumplimiento de SLA y rendimiento del equipo: Leslie Jara · Carmen Yepes · Jorge Gallego.",
     timestamp=fecha_dashboard,
 )
 
 
 # =========================
-# KPIs PRINCIPALES
+# RESUMEN GLOBAL — KPIs
 # =========================
+section_title("Resumen global", "Visión general de todas las tareas del equipo en el período cargado")
+
 kpis = calculate_sla_kpis(filtered)
 
 kpi_grid(
     [
-        ("Tareas filtradas", f"{kpis['total_tickets']:,}".replace(",", "."), "Volumen actual", ""),
-        ("SLA prioridad", f"{kpis['sla_prioridad']}%", "Cumplimiento por prioridad", "success"),
-        ("SLA size", f"{kpis['sla_size']}%", "Cumplimiento por size", "warning"),
+        ("Total tareas", f"{kpis['total_tickets']:,}".replace(",", "."), "Tareas cargadas en el CSV", ""),
+        ("SLA prioridad", f"{kpis['sla_prioridad']}%", "% tareas resueltas dentro del plazo por prioridad", "success"),
+        ("SLA size", f"{kpis['sla_size']}%", "% tareas resueltas dentro del plazo por tamaño", "warning"),
         (
             "SLA global",
             f"{kpis['sla_global']}%",
-            "Indicador principal",
+            "Cumplimiento combinado — objetivo ≥ 80%",
             "success" if kpis['sla_global'] >= 80 else "danger",
         ),
     ]
@@ -158,27 +188,102 @@ kpi_grid(
 
 kpi_grid(
     [
-        ("Tareas resueltas", f"{kpis['tickets_resueltos']:,}".replace(",", "."), "Cerradas o completadas", "success"),
-        ("Tareas abiertas", f"{kpis['tickets_abiertos']:,}".replace(",", "."), "No finalizadas", "warning"),
-        ("Tareas incumplidas", f"{kpis['tickets_incumplidos']:,}".replace(",", "."), "SLA global no cumplido", "danger"),
-        ("En riesgo SLA", f"{kpis['tickets_en_riesgo']:,}".replace(",", "."), "Riesgo por prioridad", "warning"),
+        ("Tareas resueltas", f"{kpis['tickets_resueltos']:,}".replace(",", "."), "Estado Finalizada", "success"),
+        ("Tareas abiertas", f"{kpis['tickets_abiertos']:,}".replace(",", "."), "Aún no finalizadas", "warning"),
+        ("Fuera de SLA", f"{kpis['tickets_incumplidos']:,}".replace(",", "."), "Han incumplido el SLA global", "danger"),
+        ("En riesgo", f"{kpis['tickets_en_riesgo']:,}".replace(",", "."), "Abiertas y cerca de incumplir SLA", "warning"),
     ]
 )
 
 kpi_grid(
     [
-        ("Promedio resolución", f"{kpis['dias_resolucion_promedio']} dias", "Media del equipo", ""),
-        ("Clientes", kpis['total_clientes'], "Con tareas visibles", ""),
-        ("Tecnicos", kpis['total_tecnicos'], "Asignados en el filtro", ""),
+        ("Tiempo medio resolución", f"{kpis['dias_resolucion_promedio']} días", "Media de días desde creación hasta cierre", ""),
+        ("Clientes activos", kpis['total_clientes'], "Clientes con tareas en este período", ""),
+        ("Técnicos", kpis['total_tecnicos'], "Leslie Jara · Carmen Yepes · Jorge Gallego", ""),
     ],
     secondary=True,
 )
 
 
 # =========================
-# TENDENCIA Y RESOLUCIÓN
+# BACKLOG — Tareas sin iniciar
 # =========================
-section_title("Evolución y resolución", "Tareas creadas, resueltas y tiempos de resolución")
+section_title(
+    "🗂 Backlog — Tareas sin iniciar",
+    "Todas las tareas en estado Backlog del CSV, independientemente de si tienen técnico asignado o no. "
+    "Cuanto más tiempo lleven aquí sin iniciarse, mayor el riesgo de incumplir el SLA.",
+)
+
+backlog_kpis = calculate_backlog_kpis(backlog_df)
+
+kpi_grid(
+    [
+        ("Total en backlog", str(backlog_kpis["total"]), "Tareas sin iniciar en todo el CSV", "warning"),
+        ("Tiempo medio en backlog", f"{backlog_kpis['tiempo_medio']} días", "Promedio de días desde creación", ""),
+        ("Sin tamaño (size)", str(backlog_kpis["sin_size"]), "No se puede estimar esfuerzo ni SLA", "danger" if backlog_kpis["sin_size"] > 0 else ""),
+        ("Sin prioridad", str(backlog_kpis["sin_prioridad"]), "No se puede calcular SLA de prioridad", "danger" if backlog_kpis["sin_prioridad"] > 0 else ""),
+    ]
+)
+
+# Tabla resumen por antigüedad, prioridad y size
+antiguedad_df = calculate_backlog_por_antiguedad(backlog_df)
+prioridad_backlog_df = calculate_backlog_por_prioridad(backlog_df)
+size_backlog_df = calculate_backlog_por_size(backlog_df)
+
+if not antiguedad_df.empty:
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.caption("⏱ Por antigüedad — tiempo que llevan sin iniciarse")
+        st.dataframe(antiguedad_df, use_container_width=True, hide_index=True,
+            column_config={
+                "antigüedad": "Tramo",
+                "tickets": stcc.NumberColumn("Nº tareas", format="%d"),
+            })
+    with col2:
+        st.caption("🔺 Por prioridad — urgencia de las tareas pendientes")
+        st.dataframe(prioridad_backlog_df, use_container_width=True, hide_index=True,
+            column_config={
+                "prioridad": "Prioridad",
+                "tickets": stcc.NumberColumn("Nº tareas", format="%d"),
+            })
+    with col3:
+        st.caption("📦 Por tamaño (size) — estimación de esfuerzo")
+        st.dataframe(size_backlog_df, use_container_width=True, hide_index=True,
+            column_config={
+                "size": "Tamaño",
+                "tickets": stcc.NumberColumn("Nº tareas", format="%d"),
+            })
+
+backlog_detalle = calculate_backlog_detalle(backlog_df)
+
+if not backlog_detalle.empty:
+    st.caption("Listado completo de tareas en backlog, ordenadas de más a menos antigua.")
+    st.dataframe(
+        backlog_detalle,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "ticket_id": "Ticket",
+            "resumen": stcc.TextColumn("Descripción de la tarea", width="large"),
+            "prioridad": "Prioridad",
+            "size": "Tamaño",
+            "asignado_a": stcc.TextColumn("Técnico asignado"),
+            "fecha_creacion": stcc.DatetimeColumn("Fecha creación", format="DD/MM/YYYY"),
+            "dias_en_backlog": stcc.NumberColumn("Días en backlog", format="%d días"),
+            "antigüedad": "Tramo de antigüedad",
+        },
+    )
+else:
+    empty_state("No hay tareas en estado Backlog en este CSV.")
+
+
+# =========================
+# EVOLUCIÓN TEMPORAL
+# =========================
+section_title(
+    "📈 Evolución temporal",
+    "Tareas creadas vs. resueltas por día — permite ver si el equipo resuelve más de lo que entra o acumula carga.",
+)
 
 trend_df = calculate_ticket_trends(filtered)
 resolution_fig = create_resolution_distribution_chart(filtered)
@@ -186,36 +291,38 @@ resolution_fig = create_resolution_distribution_chart(filtered)
 if not trend_df.empty:
     col1, col2 = st.columns(2)
     with col1:
-        fig = create_ticket_trend_chart(trend_df)
-        render_chart_wrapper(fig)
+        st.caption("Creadas vs. resueltas por día")
+        render_chart_wrapper(create_ticket_trend_chart(trend_df))
     with col2:
+        st.caption("Distribución del tiempo de resolución en días")
         render_chart_wrapper(resolution_fig)
 else:
     render_chart_wrapper(resolution_fig)
 
 
 # =========================
-# SLA SIZE VS REAL
+# SLA POR TAMAÑO
 # =========================
-section_title("SLA real vs size", "Objetivo medio frente a dias reales de resolucion")
+section_title(
+    "⏳ SLA real vs. objetivo por tamaño (size)",
+    "Compara el tiempo medio real de resolución con el objetivo marcado por el size de cada tarea (S=7d, M=14d, L=21d, XL=60d).",
+)
 
 sla_size_df = calculate_sla_size_comparison(filtered)
 
 if not sla_size_df.empty:
-    fig = create_sla_comparison_chart(sla_size_df)
-    render_chart_wrapper(fig)
-
+    render_chart_wrapper(create_sla_comparison_chart(sla_size_df))
     st.dataframe(
         sla_size_df,
         use_container_width=True,
         hide_index=True,
         column_config={
-            "size": "Size",
-            "tickets": stcc.NumberColumn("Tareas", format="%d"),
-            "objetivo": stcc.NumberColumn("Objetivo SLA", format="%.1f dias"),
-            "real": stcc.NumberColumn("Real", format="%.1f dias"),
+            "size": "Tamaño",
+            "tickets": stcc.NumberColumn("Nº tareas", format="%d"),
+            "objetivo": stcc.NumberColumn("Objetivo SLA (días)", format="%.1f días"),
+            "real": stcc.NumberColumn("Tiempo real (días)", format="%.1f días"),
             "cumplimiento": stcc.ProgressColumn(
-                "Cumplimiento",
+                "% cumplimiento",
                 format="%.1f%%",
                 min_value=0,
                 max_value=100,
@@ -223,109 +330,96 @@ if not sla_size_df.empty:
         },
     )
 else:
-    empty_state("No hay datos suficientes para comparar SLA por size con los filtros actuales.")
+    empty_state("No hay datos suficientes para comparar SLA por tamaño.")
 
 
 # =========================
 # DISTRIBUCIÓN DE RESOLUCIÓN
 # =========================
-section_title("Distribución de resolución", "Tiempo de resolución de tareas")
+section_title(
+    "📊 Distribución del tiempo de resolución",
+    "Histograma de cuántos días tardan en resolverse las tareas — útil para detectar colas o tareas atascadas.",
+)
 
-resolution_fig = create_resolution_distribution_chart(filtered)
-render_chart_wrapper(resolution_fig)
+render_chart_wrapper(create_resolution_distribution_chart(filtered))
 
 
 # =========================
 # ESTADO Y PRIORIDAD
 # =========================
-section_title("Estado y prioridad", "Tareas por estado y por prioridad")
+section_title(
+    "🏷 Estado y prioridad",
+    "Distribución actual de tareas por estado (en qué fase están) y por prioridad (cuántas son urgentes).",
+)
 
 status_df = calculate_status_summary(filtered)
 priority_df = calculate_priority_summary(filtered)
 
 col1, col2 = st.columns(2)
 with col1:
-    status_fig = create_status_bar_chart(status_df)
-    render_chart_wrapper(status_fig)
+    st.caption("Estado actual de las tareas")
+    render_chart_wrapper(create_status_bar_chart(status_df))
 with col2:
-    priority_fig = create_priority_bar_chart(priority_df)
-    render_chart_wrapper(priority_fig)
+    st.caption("Prioridad asignada")
+    render_chart_wrapper(create_priority_bar_chart(priority_df))
 
 
 # =========================
-# RANKING DE TÉCNICOS
+# RENDIMIENTO POR TÉCNICO
 # =========================
-section_title("Ranking de tecnicos", "Rendimiento agregado por asignado")
+section_title(
+    "👥 Rendimiento por técnico",
+    "Comparativa entre Leslie Jara, Carmen Yepes y Jorge Gallego: volumen de tareas, resueltas y cumplimiento de SLA.",
+)
 
 ranking = calculate_technician_ranking(filtered)
 
 if not ranking.empty:
+    st.caption("Ranking por volumen de tareas. Las barras de SLA indican el porcentaje de tareas resueltas dentro del plazo.")
     st.dataframe(
         ranking,
         use_container_width=True,
         hide_index=True,
         column_config={
-            "asignado_a": "Tecnico",
-            "tickets": stcc.NumberColumn("Tareas", format="%d"),
-            "resueltos": stcc.NumberColumn("Resueltos", format="%d"),
-            "sla_size": stcc.ProgressColumn("SLA size", format="%.1f%%", min_value=0, max_value=100),
+            "asignado_a": "Técnico",
+            "tickets": stcc.NumberColumn("Total tareas", format="%d"),
+            "resueltos": stcc.NumberColumn("Resueltas", format="%d"),
+            "sla_size": stcc.ProgressColumn("SLA tamaño", format="%.1f%%", min_value=0, max_value=100),
             "sla_prioridad": stcc.ProgressColumn("SLA prioridad", format="%.1f%%", min_value=0, max_value=100),
             "sla_global": stcc.ProgressColumn("SLA global", format="%.1f%%", min_value=0, max_value=100),
-            "tiempo": stcc.NumberColumn("Tiempo medio", format="%.1f dias"),
+            "tiempo": stcc.NumberColumn("Tiempo medio (días)", format="%.1f días"),
         },
     )
 else:
-    empty_state("No hay tecnicos con datos para los filtros seleccionados.")
-
-
-# =========================
-# SLA POR TÉCNICO
-# =========================
-section_title("SLA por técnico", "Top técnicos por cumplimiento")
+    empty_state("No hay técnicos con datos para los filtros seleccionados.")
 
 tech_sla_df = calculate_technician_sla_summary(filtered)
 if not tech_sla_df.empty:
-    tech_sla_fig = create_technician_sla_chart(tech_sla_df)
-    render_chart_wrapper(tech_sla_fig)
-
-    st.dataframe(
-        tech_sla_df,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "asignado_a": "Tecnico",
-            "tickets": stcc.NumberColumn("Tareas", format="%d"),
-            "resueltos": stcc.NumberColumn("Resueltos", format="%d"),
-            "sla_size": stcc.ProgressColumn("SLA size", format="%.1f%%", min_value=0, max_value=100),
-            "sla_prioridad": stcc.ProgressColumn("SLA prioridad", format="%.1f%%", min_value=0, max_value=100),
-            "sla_global": stcc.ProgressColumn("SLA global", format="%.1f%%", min_value=0, max_value=100),
-            "tiempo": stcc.NumberColumn("Tiempo medio", format="%.1f dias"),
-        },
-    )
-else:
-    empty_state("No hay datos suficientes para mostrar SLA por técnico.")
+    st.caption("Gráfico de cumplimiento SLA por técnico.")
+    render_chart_wrapper(create_technician_sla_chart(tech_sla_df))
 
 
 # =========================
-# CLIENTES - RESUMEN GLOBAL
+# CLIENTES — RESUMEN GLOBAL
 # =========================
-section_title("Clientes con mas tareas", "Todos los clientes por volumen, SLA y tiempo medio")
+section_title(
+    "🏢 Clientes",
+    "Todos los clientes con tareas en este período, ordenados por volumen. Incluye su SLA global y tiempo medio de resolución.",
+)
 
 clientes_df = calculate_top_clients(filtered)
 
 if not clientes_df.empty:
-    fig = create_top_clients_chart(clientes_df)
-    render_chart_wrapper(fig)
-
+    render_chart_wrapper(create_top_clients_chart(clientes_df))
     st.dataframe(
         clientes_df,
         use_container_width=True,
         hide_index=True,
         column_config={
             "cliente": "Cliente",
-            "tickets": stcc.NumberColumn("Tareas", format="%d"),
+            "tickets": stcc.NumberColumn("Nº tareas", format="%d"),
             "sla": stcc.ProgressColumn("SLA global", format="%.1f%%", min_value=0, max_value=100),
-            "tiempo": stcc.NumberColumn("Tiempo medio", format="%.1f dias"),
+            "tiempo": stcc.NumberColumn("Tiempo medio (días)", format="%.1f días"),
         },
     )
 else:
@@ -333,17 +427,20 @@ else:
 
 
 # =========================
-# CLIENTES - DETALLE POR CLIENTE
+# CLIENTES — DETALLE POR CLIENTE
 # =========================
-section_title("Detalle de tareas por cliente", "Selecciona un cliente para ver sus tareas individuales")
+section_title(
+    "🔍 Detalle de tareas por cliente",
+    "Selecciona un cliente para ver todas sus tareas individuales con su tiempo de resolución y cumplimiento de SLA.",
+)
 
 clientes_disponibles = sorted(filtered["cliente"].dropna().unique().tolist())
 
 cliente_seleccionado = st.selectbox(
-    "Selecciona un cliente",
+    "Selecciona un cliente para ver su detalle",
     options=[""] + clientes_disponibles,
     index=0,
-    format_func=lambda x: "Elige un cliente..." if x == "" else x,
+    format_func=lambda x: "— Elige un cliente —" if x == "" else x,
 )
 
 if cliente_seleccionado:
@@ -356,35 +453,36 @@ if cliente_seleccionado:
 
     kpi_grid(
         [
-            ("Tareas", str(total), cliente_seleccionado, ""),
-            ("Resueltas", str(resueltos), "Finalizadas", "success"),
-            ("Tiempo medio", f"{tiempo_medio} dias", "Promedio resolución", ""),
-            ("SLA global", f"{sla_global}%", "Cumplimiento", "success" if isinstance(sla_global, float) and sla_global >= 80 else "danger"),
+            ("Tareas", str(total), f"Total de {cliente_seleccionado}", ""),
+            ("Resueltas", str(resueltos), "En estado Finalizada", "success"),
+            ("Tiempo medio", f"{tiempo_medio} días", "Días desde creación hasta cierre", ""),
+            ("SLA global", f"{sla_global}%", "% tareas dentro del plazo", "success" if isinstance(sla_global, float) and sla_global >= 80 else "danger"),
         ]
     )
 
     if not detalle_df.empty:
+        st.caption("Tareas ordenadas de más reciente a más antigua.")
         st.dataframe(
             detalle_df,
             use_container_width=True,
             hide_index=True,
             column_config={
                 "ticket_id": "Ticket",
-                "resumen": "Resumen",
+                "resumen": stcc.TextColumn("Descripción", width="large"),
                 "tipo": "Tipo",
                 "estado": "Estado",
                 "prioridad": "Prioridad",
-                "size": "Size",
+                "size": "Tamaño",
                 "asignado_a": "Técnico",
                 "fecha_creacion": stcc.DatetimeColumn("Creado", format="DD/MM/YYYY"),
                 "fecha_resolucion": stcc.DatetimeColumn("Resuelto", format="DD/MM/YYYY"),
-                "dias_resolucion": stcc.NumberColumn("Días resolución", format="%.1f dias"),
+                "dias_resolucion": stcc.NumberColumn("Días resolución", format="%.1f días"),
                 "horas_resolucion": stcc.NumberColumn("Horas resolución", format="%.1f h"),
-                "sla_prioridad_cumple": stcc.CheckboxColumn("SLA prioridad"),
-                "sla_size_cumple": stcc.CheckboxColumn("SLA size"),
-                "sla_global_cumple": stcc.CheckboxColumn("SLA global"),
-                "desviacion_sla": stcc.NumberColumn("Desviación SLA", format="%.1f dias"),
+                "sla_prioridad_cumple": stcc.CheckboxColumn("✓ SLA prioridad"),
+                "sla_size_cumple": stcc.CheckboxColumn("✓ SLA tamaño"),
+                "sla_global_cumple": stcc.CheckboxColumn("✓ SLA global"),
+                "desviacion_sla": stcc.NumberColumn("Desviación SLA (días)", format="%.1f días"),
             },
         )
     else:
-        empty_state(f"No hay tareas para {cliente_seleccionado} con los filtros actuales.")
+        empty_state(f"No hay tareas para {cliente_seleccionado}.")
