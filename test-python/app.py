@@ -282,9 +282,6 @@ backlog_kpis = calculate_backlog_kpis(backlog_df)
 kpi_grid(
     [
         ("Total en backlog", str(backlog_kpis["total"]), "Tareas sin iniciar en todo el CSV", "warning"),
-        ("Tiempo medio en backlog", f"{backlog_kpis['tiempo_medio']} días", "Promedio de días desde creación", ""),
-        ("Sin tamaño (size)", str(backlog_kpis["sin_size"]), "No se puede estimar esfuerzo ni SLA", "danger" if backlog_kpis["sin_size"] > 0 else ""),
-        ("Sin prioridad", str(backlog_kpis["sin_prioridad"]), "No se puede calcular SLA de prioridad", "danger" if backlog_kpis["sin_prioridad"] > 0 else ""),
     ]
 )
 
