@@ -8,6 +8,15 @@ import pandas as pd
 from fpdf import FPDF
 
 
+def format_percent(value):
+    if value is None:
+        return "-"
+    try:
+        return f"{int(round(float(value)))}%"
+    except (TypeError, ValueError):
+        return "-"
+
+
 def generate_excel_report(kpis, trend_df, sla_size_df, ranking_df, clientes_df, tech_sla_df):
     """Genera un reporte Excel en memoria."""
     output = BytesIO()
@@ -35,7 +44,7 @@ def generate_excel_report(kpis, trend_df, sla_size_df, ranking_df, clientes_df, 
                     kpis["tickets_en_riesgo"],
                     f"{kpis['sla_prioridad']}%",
                     f"{kpis['sla_size']}%",
-                    f"{kpis['sla_global']}%",
+                    format_percent(kpis['sla_global']),
                     kpis["total_clientes"],
                     kpis["total_tecnicos"],
                     f"{kpis['dias_resolucion_promedio']}",
@@ -90,7 +99,7 @@ def generate_pdf_report(kpis, top_clients, top_tech):
         ("En riesgo SLA", kpis["tickets_en_riesgo"]),
         ("SLA prioridad", f"{kpis['sla_prioridad']}%"),
         ("SLA size", f"{kpis['sla_size']}%"),
-        ("SLA global", f"{kpis['sla_global']}%"),
+        ("SLA global", format_percent(kpis['sla_global'])),
         ("Promedio resolución", f"{kpis['dias_resolucion_promedio']} días"),
     ]
 

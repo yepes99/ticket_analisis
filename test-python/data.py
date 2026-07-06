@@ -90,7 +90,7 @@ def render_filters(df):
         df (pd.DataFrame): DataFrame para obtener valores únicos
         
     Returns:
-        tuple: (clientes_filter, asignadores_filter, sizes_filter, date_range)
+        tuple: (clientes_filter, asignadores_filter, sizes_filter, tipos_filter, date_range)
     """
     st.sidebar.markdown("## Filtros")
 
@@ -109,6 +109,14 @@ def render_filters(df):
         sorted(df["size"].dropna().unique()),
     )
 
+    if "tipo" in df.columns:
+        tipos = st.sidebar.multiselect(
+            "Tipo de actividad",
+            sorted({str(value).strip() for value in df["tipo"].dropna().astype(str).tolist() if str(value).strip()}),
+        )
+    else:
+        tipos = []
+
     min_date = df["fecha_creacion"].min().date()
     max_date = df["fecha_creacion"].max().date()
 
@@ -119,10 +127,10 @@ def render_filters(df):
         max_value=max_date,
     )
 
-    return clientes, asignadores, sizes, date_range
+    return clientes, asignadores, sizes, tipos, date_range
 
 
-def apply_filters(df, clientes=None, asignadores=None, sizes=None, date_range=None):
+def apply_filters(df, clientes=None, asignadores=None, sizes=None, tipos=None, date_range=None):
     """
     Aplica filtros al DataFrame.
     
@@ -131,6 +139,7 @@ def apply_filters(df, clientes=None, asignadores=None, sizes=None, date_range=No
         clientes (list, optional): Lista de clientes a filtrar
         asignadores (list, optional): Lista de técnicos a filtrar
         sizes (list, optional): Lista de sizes a filtrar
+        tipos (list, optional): Lista de tipos de actividad a filtrar
         date_range (tuple, optional): Rango de fechas para fecha_creacion
         
     Returns:
@@ -147,7 +156,11 @@ def apply_filters(df, clientes=None, asignadores=None, sizes=None, date_range=No
     if sizes:
         filtered = filtered[filtered["size"].isin(sizes)]
 
-    if date_range and len(date_range) == 2:
+    if tipos:
+        if "tipo" in filtered.columns:
+            filtered = filtered[filtered["tipo"].fillna("").astype(str).str.strip().isin(tipos)]
+
+    if date_range and len(date_range) == 2 and "fecha_creacion" in filtered.columns:
         start_date, end_date = date_range
         filtered = filtered[
             (filtered["fecha_creacion"].dt.date >= start_date)

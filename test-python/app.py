@@ -4,12 +4,13 @@ Dashboard Jira Pro - Aplicación principal.
 
 from datetime import datetime
 from io import BytesIO
+import math
 import streamlit as st
 
 import config
 from styles import apply_styles
 from auth import check_authentication
-from data import load_and_validate_data, show_welcome_if_no_file
+from data import load_and_validate_data, show_welcome_if_no_file, render_filters, apply_filters
 from report import generate_excel_report, generate_pdf_report
 from ui_components import (
     render_hero_header,
@@ -28,6 +29,7 @@ from metrics import (
     calculate_status_summary,
     calculate_priority_summary,
     calculate_client_ticket_detail,
+    calculate_reopened_tickets,
 )
 from charts import (
     create_sla_comparison_chart,
@@ -51,6 +53,15 @@ from backlog_charts import (
     create_backlog_size_chart,
 )
 import streamlit.column_config as stcc
+
+
+def format_percent(value):
+    if value is None or (isinstance(value, float) and math.isnan(value)):
+        return "-"
+    try:
+        return f"{int(round(float(value)))}%"
+    except (TypeError, ValueError):
+        return "-"
 
 
 # =========================
@@ -101,11 +112,28 @@ if uploaded_file is None:
 # =========================
 df = load_and_validate_data(uploaded_file)
 
-# Backlog: todas las tareas en estado Backlog, sin filtrar por técnico
-backlog_df = df[df["estado"].str.lower() == "backlog"].copy()
+clientes_filter, asignadores_filter, sizes_filter, tipos_filter, date_range = render_filters(df)
 
 # El resto del dashboard: solo los 3 técnicos permitidos
-filtered = df[df["asignado_a"].isin(TECNICOS_PERMITIDOS)].copy()
+team_df = df[df["asignado_a"].isin(TECNICOS_PERMITIDOS)].copy()
+filtered = apply_filters(
+    team_df,
+    clientes=clientes_filter,
+    asignadores=asignadores_filter,
+    sizes=sizes_filter,
+    tipos=tipos_filter,
+    date_range=date_range,
+)
+
+# Backlog: todas las tareas en estado Backlog con los filtros aplicados
+backlog_df = apply_filters(
+    df[df["estado"].astype(str).str.lower() == "backlog"].copy(),
+    clientes=clientes_filter,
+    asignadores=asignadores_filter,
+    sizes=sizes_filter,
+    tipos=tipos_filter,
+    date_range=date_range,
+)
 
 if filtered.empty:
     st.warning("No se encontraron tareas asignadas a Leslie Jara, Carmen Yepes o Jorge Gallego en este CSV.")
@@ -179,7 +207,7 @@ kpi_grid(
         ("SLA size", f"{kpis['sla_size']}%", "% tareas resueltas dentro del plazo por tamaño", "warning"),
         (
             "SLA global",
-            f"{kpis['sla_global']}%",
+            format_percent(kpis['sla_global']),
             "Cumplimiento combinado — objetivo ≥ 80%",
             "success" if kpis['sla_global'] >= 80 else "danger",
         ),
@@ -265,6 +293,7 @@ if not backlog_detalle.empty:
         column_config={
             "ticket_id": "Ticket",
             "resumen": stcc.TextColumn("Descripción de la tarea", width="large"),
+            "tipo": "Tipo de actividad",
             "prioridad": "Prioridad",
             "size": "Tamaño",
             "asignado_a": stcc.TextColumn("Técnico asignado"),
@@ -400,6 +429,44 @@ if not tech_sla_df.empty:
 
 
 # =========================
+# TICKETS REABERTOS
+# =========================
+section_title(
+    "🔁 Tickets reabiertos",
+    "Tickets con señales de reabertura detectadas en el resumen, descripción o estado del propio CSV.",
+)
+
+reopened_df = calculate_reopened_tickets(filtered)
+if not reopened_df.empty:
+    kpi_grid(
+        [
+            ("Reabiertos", str(len(reopened_df)), "Tickets con señales de reapertura", "warning"),
+            ("% sobre el total", f"{round(len(reopened_df) / len(filtered) * 100, 1)}%", "Proporción de tickets reabiertos", "warning"),
+        ]
+    )
+    st.caption("Listado de tickets con indicios de reapertura.")
+    st.dataframe(
+        reopened_df,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "ticket_id": "Ticket",
+            "resumen": stcc.TextColumn("Descripción", width="large"),
+            "tipo": "Tipo",
+            "estado": "Estado",
+            "cliente": "Cliente",
+            "asignado_a": "Técnico",
+            "fecha_creacion": stcc.DatetimeColumn("Creado", format="DD/MM/YYYY"),
+            "fecha_resolucion": stcc.DatetimeColumn("Resuelto", format="DD/MM/YYYY"),
+            "prioridad": "Prioridad",
+            "size": "Tamaño",
+        },
+    )
+else:
+    empty_state("No se detectaron tickets con señales de reapertura en los filtros actuales.")
+
+
+# =========================
 # CLIENTES — RESUMEN GLOBAL
 # =========================
 section_title(
@@ -447,7 +514,13 @@ if cliente_seleccionado:
     detalle_df = calculate_client_ticket_detail(filtered, cliente_seleccionado)
 
     total = len(detalle_df)
-    resueltos = int(detalle_df["resuelto"].sum()) if "resuelto" in detalle_df.columns else 0
+    if "resuelto" in detalle_df.columns:
+        resueltos = int(detalle_df["resuelto"].sum())
+    elif "estado" in detalle_df.columns:
+        resueltos = int(detalle_df["estado"].astype(str).str.lower().eq("finalizada").sum())
+    else:
+        resueltos = 0
+
     tiempo_medio = round(detalle_df["dias_resolucion"].mean(), 1) if "dias_resolucion" in detalle_df.columns else "-"
     sla_global = round(detalle_df["sla_global_cumple"].mean() * 100, 1) if "sla_global_cumple" in detalle_df.columns else "-"
 
@@ -456,7 +529,7 @@ if cliente_seleccionado:
             ("Tareas", str(total), f"Total de {cliente_seleccionado}", ""),
             ("Resueltas", str(resueltos), "En estado Finalizada", "success"),
             ("Tiempo medio", f"{tiempo_medio} días", "Días desde creación hasta cierre", ""),
-            ("SLA global", f"{sla_global}%", "% tareas dentro del plazo", "success" if isinstance(sla_global, float) and sla_global >= 80 else "danger"),
+            ("SLA global", format_percent(sla_global), "% tareas dentro del plazo", "success" if isinstance(sla_global, float) and sla_global >= 80 else "danger"),
         ]
     )
 
@@ -480,7 +553,6 @@ if cliente_seleccionado:
                 "horas_resolucion": stcc.NumberColumn("Horas resolución", format="%.1f h"),
                 "sla_prioridad_cumple": stcc.CheckboxColumn("✓ SLA prioridad"),
                 "sla_size_cumple": stcc.CheckboxColumn("✓ SLA tamaño"),
-                "sla_global_cumple": stcc.CheckboxColumn("✓ SLA global"),
                 "desviacion_sla": stcc.NumberColumn("Desviación SLA (días)", format="%.1f días"),
             },
         )

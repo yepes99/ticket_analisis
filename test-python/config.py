@@ -40,6 +40,7 @@ FILTER_COLUMNS = {
     "cliente": "Cliente",
     "asignado_a": "Tecnico asignado",
     "size": "Size",
+    "tipo": "Tipo de actividad",
 }
 
 # Top N para ranking

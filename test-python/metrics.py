@@ -2,16 +2,40 @@
 Cálculo de métricas y KPIs.
 """
 
+import re
 import pandas as pd
 
 
 def pct(series):
-    if series.empty:
+    if series is None or series.empty:
         return 0.0
-    value = series.mean()
+    numeric = pd.to_numeric(series, errors="coerce")
+    if numeric.dropna().empty:
+        return 0.0
+    value = numeric.mean(skipna=True)
     if pd.isna(value):
         return 0.0
     return round(value * 100, 1)
+
+
+REOPENED_TERMS = [
+    r"\breabiert",
+    r"\breabrid",
+    r"\breabrir",
+    r"\breopen",
+    r"\breopened",
+    r"\breapertura",
+    r"\breabro",
+    r"\breabrimos",
+    r"\bopen again\b",
+    r"\bopened again\b",
+    r"\breopening",
+    r"\breopened again",
+    r"\breopens",
+    r"\breopen as",
+    r"\bde nuevo\b",
+    r"\bde nuevo\b",
+]
 
 
 def calculate_sla_kpis(df):
@@ -81,6 +105,29 @@ def calculate_priority_summary(df):
 def calculate_technician_sla_summary(df, top_n=15):
     ranking = calculate_technician_ranking(df)
     return ranking.head(top_n)
+
+
+def calculate_reopened_tickets(df):
+    """
+    Identifica tickets con señales de reaparición a partir del resumen, descripción y estado.
+    Esto se basa en texto estructurado del propio CSV, ya que no hay historial de cambios.
+    """
+    if df.empty:
+        return pd.DataFrame(columns=["ticket_id", "resumen", "estado", "cliente", "asignado_a", "fecha_creacion", "fecha_resolucion"])
+
+    def is_reopened(row):
+        text_parts = [
+            row.get("resumen", ""),
+            row.get("descripcion", ""),
+            row.get("titulo_ticket", ""),
+            row.get("estado", ""),
+        ]
+        text = " ".join(str(part or "") for part in text_parts).lower()
+        return any(re.search(term, text) for term in REOPENED_TERMS)
+
+    mask = df.apply(is_reopened, axis=1)
+    cols = [c for c in ["ticket_id", "resumen", "tipo", "estado", "cliente", "asignado_a", "fecha_creacion", "fecha_resolucion", "prioridad", "size", "descripcion"] if c in df.columns]
+    return df.loc[mask, cols].copy()
 
 
 def calculate_sla_size_comparison(df):
@@ -158,6 +205,7 @@ def calculate_client_ticket_detail(df, cliente):
         "resumen",
         "tipo",
         "estado",
+        "resuelto",
         "prioridad",
         "size",
         "asignado_a",
@@ -167,7 +215,6 @@ def calculate_client_ticket_detail(df, cliente):
         "horas_resolucion",
         "sla_prioridad_cumple",
         "sla_size_cumple",
-        "sla_global_cumple",
         "desviacion_sla",
     ]
 

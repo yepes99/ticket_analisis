@@ -49,8 +49,9 @@ def completar_metricas_resolucion(df):
         np.nan,
     )
 
-    # Resuelto si el Estado es "Finalizada"
-    df["resuelto"] = (df["estado"] == "Finalizada").astype(int)
+    # Resuelto si el Estado es "Finalizada" (independientemente de mayúsculas o espacios)
+    estado_normalizado = df["estado"].astype("string").fillna("").str.strip().str.lower()
+    df["resuelto"] = (estado_normalizado == "finalizada").astype(int)
 
     df["dias_abierto"] = np.where(
         df["fecha_resolucion"].isna(),
