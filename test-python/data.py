@@ -5,7 +5,7 @@ Carga, validación y filtrado de datos.
 import streamlit as st
 import pandas as pd
 from process import cargar_tickets
-from config import REQUIRED_COLUMNS, FILTER_COLUMNS
+from config import REQUIRED_COLUMNS, FILTER_COLUMNS, TECNICOS_PERMITIDOS
 from ui_components import render_welcome_header, empty_state
 
 
@@ -70,6 +70,9 @@ def load_and_validate_data(uploaded_file):
         st.error(f"Error cargando CSV: {exc}")
         if hasattr(exc, "args") and exc.args:
             st.write("Revisa la cabecera del CSV y los nombres de columna esperados.")
+        # En entornos donde `st.stop()` no detiene (p.e. import durante tests),
+        # aseguramos que `df` queda definido para evitar UnboundLocalError.
+        df = pd.DataFrame()
         st.stop()
 
     # Validar columnas requeridas
@@ -94,31 +97,42 @@ def render_filters(df):
     """
     st.sidebar.markdown("## Filtros")
 
-    clientes = st.sidebar.multiselect(
-        "Cliente",
-        sorted(df["cliente"].dropna().unique()),
-    )
+    clientes = []
+    if "cliente" in df.columns:
+        clientes = st.sidebar.multiselect(
+            "Cliente",
+            sorted(df["cliente"].dropna().unique()),
+        )
+
+    # Mostrar sólo los técnicos permitidos (si existen en el CSV)
+    asignadores_disponibles = []
+    if "asignado_a" in df.columns:
+        asignadores_disponibles = sorted(df["asignado_a"].dropna().unique())
+    asignadores_permitidos = [t for t in asignadores_disponibles if t in TECNICOS_PERMITIDOS]
+    asignadores_options = asignadores_permitidos if asignadores_permitidos else asignadores_disponibles
 
     asignadores = st.sidebar.multiselect(
         "Tecnico asignado",
-        sorted(df["asignado_a"].dropna().unique()),
+        sorted(asignadores_options),
     )
 
-    sizes = st.sidebar.multiselect(
-        "Size",
-        sorted(df["size"].dropna().unique()),
-    )
-
-    if "tipo" in df.columns:
-        tipos = st.sidebar.multiselect(
-            "Tipo de actividad",
-            sorted({str(value).strip() for value in df["tipo"].dropna().astype(str).tolist() if str(value).strip()}),
+    sizes = []
+    if "size" in df.columns:
+        sizes = st.sidebar.multiselect(
+            "Size",
+            sorted(df["size"].dropna().unique()),
         )
-    else:
-        tipos = []
 
-    min_date = df["fecha_creacion"].min().date()
-    max_date = df["fecha_creacion"].max().date()
+    # No activity-type filter: keep filters to cliente, asignador y size
+
+    # Manejo seguro de fechas: si no existe la columna o está vacía, usar hoy
+    if "fecha_creacion" in df.columns and not df["fecha_creacion"].dropna().empty:
+        min_date = df["fecha_creacion"].min().date()
+        max_date = df["fecha_creacion"].max().date()
+    else:
+        today = pd.Timestamp.now().date()
+        min_date = today
+        max_date = today
 
     date_range = st.sidebar.date_input(
         "Rango de fecha de creación",
@@ -127,10 +141,10 @@ def render_filters(df):
         max_value=max_date,
     )
 
-    return clientes, asignadores, sizes, tipos, date_range
+    return clientes, asignadores, sizes, date_range
 
 
-def apply_filters(df, clientes=None, asignadores=None, sizes=None, tipos=None, date_range=None):
+def apply_filters(df, clientes=None, asignadores=None, sizes=None, date_range=None):
     """
     Aplica filtros al DataFrame.
     
@@ -155,10 +169,6 @@ def apply_filters(df, clientes=None, asignadores=None, sizes=None, tipos=None, d
 
     if sizes:
         filtered = filtered[filtered["size"].isin(sizes)]
-
-    if tipos:
-        if "tipo" in filtered.columns:
-            filtered = filtered[filtered["tipo"].fillna("").astype(str).str.strip().isin(tipos)]
 
     if date_range and len(date_range) == 2 and "fecha_creacion" in filtered.columns:
         start_date, end_date = date_range

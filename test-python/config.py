@@ -35,12 +35,14 @@ PAGE_CONFIG = {
     "initial_sidebar_state": "expanded",
 }
 
+# Técnicos permitidos (filtro y cálculo restringido a este conjunto)
+TECNICOS_PERMITIDOS = ["Leslie Jara", "Carmen Yepes", "Jorge Gallego"]
+
 # Filtros
 FILTER_COLUMNS = {
     "cliente": "Cliente",
     "asignado_a": "Tecnico asignado",
     "size": "Size",
-    "tipo": "Tipo de actividad",
 }
 
 # Top N para ranking

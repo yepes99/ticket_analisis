@@ -33,11 +33,9 @@ from metrics import (
 )
 from charts import (
     create_sla_comparison_chart,
-    create_top_clients_chart,
-    create_ticket_trend_chart,
-    create_resolution_distribution_chart,
     create_status_bar_chart,
     create_priority_bar_chart,
+    create_avg_resolution_chart,
     create_technician_sla_chart,
 )
 from backlog_metrics import (
@@ -64,10 +62,8 @@ def format_percent(value):
         return "-"
 
 
-# =========================
-# TÉCNICOS PERMITIDOS
-# =========================
-TECNICOS_PERMITIDOS = ["Leslie Jara", "Carmen Yepes", "Jorge Gallego"]
+# Técnicos permitidos vienen de la configuración
+# (config.TECNICOS_PERMITIDOS)
 
 
 # =========================
@@ -112,32 +108,51 @@ if uploaded_file is None:
 # =========================
 df = load_and_validate_data(uploaded_file)
 
-clientes_filter, asignadores_filter, sizes_filter, tipos_filter, date_range = render_filters(df)
+clientes_filter, asignadores_filter, sizes_filter, date_range = render_filters(df)
 
-# El resto del dashboard: solo los 3 técnicos permitidos
-team_df = df[df["asignado_a"].isin(TECNICOS_PERMITIDOS)].copy()
+# El resto del dashboard: solo los 3 técnicos permitidos (defensivo si falta la columna)
+if "asignado_a" in df.columns:
+    team_df = df[df["asignado_a"].isin(config.TECNICOS_PERMITIDOS)].copy()
+else:
+    team_df = df.copy()
 filtered = apply_filters(
     team_df,
     clientes=clientes_filter,
     asignadores=asignadores_filter,
     sizes=sizes_filter,
-    tipos=tipos_filter,
     date_range=date_range,
 )
 
 # Backlog: todas las tareas en estado Backlog con los filtros aplicados
+if "estado" in df.columns:
+    backlog_source = df[df["estado"].astype(str).str.lower() == "backlog"].copy()
+else:
+    backlog_source = df.iloc[0:0].copy()
+
 backlog_df = apply_filters(
-    df[df["estado"].astype(str).str.lower() == "backlog"].copy(),
+    backlog_source,
     clientes=clientes_filter,
     asignadores=asignadores_filter,
     sizes=sizes_filter,
-    tipos=tipos_filter,
     date_range=date_range,
 )
 
 if filtered.empty:
     st.warning("No se encontraron tareas asignadas a Leslie Jara, Carmen Yepes o Jorge Gallego en este CSV.")
     st.stop()
+    # Si no estamos ejecutando como app de Streamlit (p.e. durante import/tests),
+    # detener también la ejecución del intérprete para evitar errores posteriores.
+    try:
+        # `get_script_run_ctx` existe cuando Streamlit está ejecutando el script.
+        from streamlit.runtime.scriptrunner import get_script_run_ctx
+    except Exception:
+        try:
+            from streamlit.scriptrunner import get_script_run_ctx
+        except Exception:
+            get_script_run_ctx = lambda: None
+
+    if get_script_run_ctx() is None:
+        raise SystemExit
 
 
 # =========================
@@ -146,40 +161,43 @@ if filtered.empty:
 st.sidebar.markdown("## Exportar")
 st.sidebar.caption("Descarga un resumen de los datos actuales.")
 
-kpis_export = calculate_sla_kpis(filtered)
-trend_export = calculate_ticket_trends(filtered)
-sla_size_export = calculate_sla_size_comparison(filtered)
-ranking_export = calculate_technician_ranking(filtered)
-clientes_export = calculate_top_clients(filtered)
-tech_sla_export = calculate_technician_sla_summary(filtered)
+try:
+    kpis_export = calculate_sla_kpis(filtered)
+    trend_export = calculate_ticket_trends(filtered)
+    sla_size_export = calculate_sla_size_comparison(filtered)
+    ranking_export = calculate_technician_ranking(filtered)
+    clientes_export = calculate_top_clients(filtered)
+    tech_sla_export = calculate_technician_sla_summary(filtered)
 
-excel_bytes = generate_excel_report(
-    kpis_export,
-    trend_export,
-    sla_size_export,
-    ranking_export,
-    clientes_export,
-    tech_sla_export,
-)
-st.sidebar.download_button(
-    "Descargar Excel",
-    data=excel_bytes,
-    file_name=f"reporte_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
-    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-)
+    excel_bytes = generate_excel_report(
+        kpis_export,
+        trend_export,
+        sla_size_export,
+        ranking_export,
+        clientes_export,
+        tech_sla_export,
+    )
+    st.sidebar.download_button(
+        "Descargar Excel",
+        data=excel_bytes,
+        file_name=f"reporte_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
 
-pdf_bytes = generate_pdf_report(kpis_export, clientes_export, tech_sla_export)
-if isinstance(pdf_bytes, str):
-    pdf_bytes = pdf_bytes.encode("latin-1")
-elif isinstance(pdf_bytes, bytearray):
-    pdf_bytes = bytes(pdf_bytes)
-pdf_buffer = BytesIO(pdf_bytes) if isinstance(pdf_bytes, (bytes, bytearray)) else pdf_bytes
-st.sidebar.download_button(
-    "Descargar PDF",
-    data=pdf_buffer,
-    file_name=f"reporte_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
-    mime="application/pdf",
-)
+    pdf_bytes = generate_pdf_report(kpis_export, clientes_export, tech_sla_export)
+    if isinstance(pdf_bytes, str):
+        pdf_bytes = pdf_bytes.encode("latin-1")
+    elif isinstance(pdf_bytes, bytearray):
+        pdf_bytes = bytes(pdf_bytes)
+    pdf_buffer = BytesIO(pdf_bytes) if isinstance(pdf_bytes, (bytes, bytearray)) else pdf_bytes
+    st.sidebar.download_button(
+        "Descargar PDF",
+        data=pdf_buffer,
+        file_name=f"reporte_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+        mime="application/pdf",
+    )
+except Exception as exc:
+    st.sidebar.info("No hay datos suficientes para generar exportes.")
 
 
 # =========================
@@ -198,7 +216,24 @@ render_hero_header(
 # =========================
 section_title("Resumen global", "Visión general de todas las tareas del equipo en el período cargado")
 
-kpis = calculate_sla_kpis(filtered)
+try:
+    kpis = calculate_sla_kpis(filtered)
+except Exception:
+    # En contextos de import (sin archivos válidos) o DataFrame vacío,
+    # devolvemos valores por defecto para que la UI no falle.
+    kpis = {
+        "total_tickets": 0,
+        "sla_prioridad": 0,
+        "sla_size": 0,
+        "sla_global": 0,
+        "tickets_resueltos": 0,
+        "tickets_abiertos": 0,
+        "tickets_incumplidos": 0,
+        "tickets_en_riesgo": 0,
+        "dias_resolucion_promedio": 0,
+        "total_clientes": 0,
+        "total_tecnicos": 0,
+    }
 
 kpi_grid(
     [
@@ -306,27 +341,7 @@ else:
     empty_state("No hay tareas en estado Backlog en este CSV.")
 
 
-# =========================
-# EVOLUCIÓN TEMPORAL
-# =========================
-section_title(
-    "📈 Evolución temporal",
-    "Tareas creadas vs. resueltas por día — permite ver si el equipo resuelve más de lo que entra o acumula carga.",
-)
-
-trend_df = calculate_ticket_trends(filtered)
-resolution_fig = create_resolution_distribution_chart(filtered)
-
-if not trend_df.empty:
-    col1, col2 = st.columns(2)
-    with col1:
-        st.caption("Creadas vs. resueltas por día")
-        render_chart_wrapper(create_ticket_trend_chart(trend_df))
-    with col2:
-        st.caption("Distribución del tiempo de resolución en días")
-        render_chart_wrapper(resolution_fig)
-else:
-    render_chart_wrapper(resolution_fig)
+# Evolución temporal: sección eliminada por petición del usuario.
 
 
 # =========================
@@ -362,35 +377,21 @@ else:
     empty_state("No hay datos suficientes para comparar SLA por tamaño.")
 
 
-# =========================
-# DISTRIBUCIÓN DE RESOLUCIÓN
-# =========================
-section_title(
-    "📊 Distribución del tiempo de resolución",
-    "Histograma de cuántos días tardan en resolverse las tareas — útil para detectar colas o tareas atascadas.",
-)
-
-render_chart_wrapper(create_resolution_distribution_chart(filtered))
+# Distribución de resolución: se ha removido por petición del usuario.
 
 
 # =========================
-# ESTADO Y PRIORIDAD
+# RESOLUCIÓN MEDIA
 # =========================
 section_title(
-    "🏷 Estado y prioridad",
-    "Distribución actual de tareas por estado (en qué fase están) y por prioridad (cuántas son urgentes).",
+    "📊 Resolución media (días)",
+    "Promedio de días que tardan en resolverse los tickets. Incluye la media global y por técnico.",
 )
-
-status_df = calculate_status_summary(filtered)
-priority_df = calculate_priority_summary(filtered)
-
-col1, col2 = st.columns(2)
-with col1:
-    st.caption("Estado actual de las tareas")
-    render_chart_wrapper(create_status_bar_chart(status_df))
-with col2:
-    st.caption("Prioridad asignada")
-    render_chart_wrapper(create_priority_bar_chart(priority_df))
+try:
+    avg_fig = create_avg_resolution_chart(filtered)
+    render_chart_wrapper(avg_fig)
+except Exception:
+    empty_state("No hay datos suficientes para calcular la resolución media.")
 
 
 # =========================
@@ -466,31 +467,7 @@ else:
     empty_state("No se detectaron tickets con señales de reapertura en los filtros actuales.")
 
 
-# =========================
-# CLIENTES — RESUMEN GLOBAL
-# =========================
-section_title(
-    "🏢 Clientes",
-    "Todos los clientes con tareas en este período, ordenados por volumen. Incluye su SLA global y tiempo medio de resolución.",
-)
-
-clientes_df = calculate_top_clients(filtered)
-
-if not clientes_df.empty:
-    render_chart_wrapper(create_top_clients_chart(clientes_df))
-    st.dataframe(
-        clientes_df,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "cliente": "Cliente",
-            "tickets": stcc.NumberColumn("Nº tareas", format="%d"),
-            "sla": stcc.ProgressColumn("SLA global", format="%.1f%%", min_value=0, max_value=100),
-            "tiempo": stcc.NumberColumn("Tiempo medio (días)", format="%.1f días"),
-        },
-    )
-else:
-    empty_state("No hay clientes con datos para los filtros seleccionados.")
+# Clientes summary removed per request: UI no longer shows global clients table
 
 
 # =========================
@@ -522,14 +499,12 @@ if cliente_seleccionado:
         resueltos = 0
 
     tiempo_medio = round(detalle_df["dias_resolucion"].mean(), 1) if "dias_resolucion" in detalle_df.columns else "-"
-    sla_global = round(detalle_df["sla_global_cumple"].mean() * 100, 1) if "sla_global_cumple" in detalle_df.columns else "-"
 
     kpi_grid(
         [
             ("Tareas", str(total), f"Total de {cliente_seleccionado}", ""),
             ("Resueltas", str(resueltos), "En estado Finalizada", "success"),
             ("Tiempo medio", f"{tiempo_medio} días", "Días desde creación hasta cierre", ""),
-            ("SLA global", format_percent(sla_global), "% tareas dentro del plazo", "success" if isinstance(sla_global, float) and sla_global >= 80 else "danger"),
         ]
     )
 
@@ -551,9 +526,7 @@ if cliente_seleccionado:
                 "fecha_resolucion": stcc.DatetimeColumn("Resuelto", format="DD/MM/YYYY"),
                 "dias_resolucion": stcc.NumberColumn("Días resolución", format="%.1f días"),
                 "horas_resolucion": stcc.NumberColumn("Horas resolución", format="%.1f h"),
-                "sla_prioridad_cumple": stcc.CheckboxColumn("✓ SLA prioridad"),
-                "sla_size_cumple": stcc.CheckboxColumn("✓ SLA tamaño"),
-                "desviacion_sla": stcc.NumberColumn("Desviación SLA (días)", format="%.1f días"),
+                # SLA columns removed per request
             },
         )
     else:

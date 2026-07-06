@@ -78,6 +78,56 @@ def create_resolution_distribution_chart(df):
     return fig
 
 
+def create_avg_resolution_chart(df):
+    """
+    Crea un gráfico de barras con la resolución media (días).
+
+    - Una barra `Todos` con la media global sobre tickets resueltos.
+    - Barras por técnico (`asignado_a`) con su media (si existen asignados).
+    """
+    # Filtrar solo tickets con dias_resolucion válidos
+    if "dias_resolucion" not in df.columns:
+        # DataFrame sin la columna, devolver figura vacía
+        fig = px.bar(title="Resolución media (días)")
+        return apply_chart_layout(fig)
+
+    resolved = df[df["dias_resolucion"].notna()].copy()
+    if resolved.empty:
+        fig = px.bar(title="Resolución media (días)")
+        return apply_chart_layout(fig)
+
+    overall = resolved["dias_resolucion"].mean()
+
+    # Media por técnico si existe la columna
+    if "asignado_a" in resolved.columns:
+        by_tech = (
+            resolved.groupby("asignado_a")["dias_resolucion"].mean().reset_index()
+        )
+        # Prepend overall as first row
+        rows = [{"asignado_a": "Todos", "dias_resolucion": overall}]
+        rows += by_tech.to_dict(orient="records")
+        plot_df = pd.DataFrame(rows)
+        x = "asignado_a"
+        labels = {"asignado_a": "Técnico", "dias_resolucion": "Días (media)"}
+    else:
+        plot_df = pd.DataFrame([{"asignado_a": "Todos", "dias_resolucion": overall}])
+        x = "asignado_a"
+        labels = {"asignado_a": "", "dias_resolucion": "Días (media)"}
+
+    fig = px.bar(
+        plot_df,
+        x=x,
+        y="dias_resolucion",
+        labels=labels,
+        title="Resolución media (días)",
+        color_discrete_sequence=[PLOT_COLORS[2]],
+    )
+    apply_chart_layout(fig)
+    fig.update_traces(marker_line_width=0.6, marker_line_color="#0e1720", opacity=0.95)
+    fig.update_layout(yaxis_title="Días (media)")
+    return fig
+
+
 def create_status_bar_chart(df):
     """
     Crea gráfico de barras de tickets por estado.
