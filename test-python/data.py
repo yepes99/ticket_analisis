@@ -4,13 +4,18 @@ Carga, validación y filtrado de datos.
 
 import streamlit as st
 import pandas as pd
-from process import cargar_tickets
+from process import (
+    SNAPSHOT_FILE,
+    cargar_snapshot_jira,
+    cargar_tickets,
+    cargar_tickets_jira,
+    guardar_snapshot_jira,
+)
 from config import REQUIRED_COLUMNS, FILTER_COLUMNS, TECNICOS_PERMITIDOS
 from ui_components import render_welcome_header, empty_state
 
 
-@st.cache_data
-def load_data(file):
+def load_data(file, max_results=10):
     """
     Carga datos desde un archivo CSV.
     
@@ -25,7 +30,30 @@ def load_data(file):
     """
     if hasattr(file, "seek"):
         file.seek(0)
+    if file is None:
+        return cargar_tickets_jira(max_results=max_results)
     return cargar_tickets(file)
+
+
+def load_snapshot_data():
+    df = cargar_snapshot_jira()
+    is_valid, missing = validate_columns(df)
+    if not is_valid:
+        raise ValueError(f"Snapshot incompleto. Faltan columnas: {missing}")
+    return df
+
+
+def snapshot_exists():
+    return SNAPSHOT_FILE.exists()
+
+
+def refresh_jira_snapshot():
+    df = cargar_tickets_jira(max_results=None, page_size=100, pause_seconds=0.2)
+    is_valid, missing = validate_columns(df)
+    if not is_valid:
+        raise ValueError(f"Datos de Jira incompletos. Faltan columnas: {missing}")
+    guardar_snapshot_jira(df)
+    return df
 
 
 def validate_columns(df):
@@ -50,13 +78,13 @@ def show_welcome_if_no_file():
         bool: True si debe continuar, False si debe detener
     """
     render_welcome_header()
-    st.info("Sube un CSV para comenzar.")
+    st.info("Cargando datos directamente desde Jira.")
     return False
 
 
-def load_and_validate_data(uploaded_file):
+def load_and_validate_data(uploaded_file, max_results=10):
     """
-    Carga y valida el archivo CSV. Detiene la app si hay errores.
+    Carga y valida los datos. Por defecto usa Jira si no se recibe un archivo CSV.
     
     Args:
         uploaded_file: Archivo cargado por el usuario
@@ -65,13 +93,11 @@ def load_and_validate_data(uploaded_file):
         pd.DataFrame: DataFrame validado
     """
     try:
-        df = load_data(uploaded_file)
+        df = load_data(uploaded_file, max_results=max_results)
     except Exception as exc:
-        st.error(f"Error cargando CSV: {exc}")
+        st.error(f"Error cargando datos desde Jira: {exc}")
         if hasattr(exc, "args") and exc.args:
-            st.write("Revisa la cabecera del CSV y los nombres de columna esperados.")
-        # En entornos donde `st.stop()` no detiene (p.e. import durante tests),
-        # aseguramos que `df` queda definido para evitar UnboundLocalError.
+            st.write("Revisa la configuración de Jira y el token de acceso.")
         df = pd.DataFrame()
         st.stop()
 
@@ -172,9 +198,11 @@ def apply_filters(df, clientes=None, asignadores=None, sizes=None, date_range=No
 
     if date_range and len(date_range) == 2 and "fecha_creacion" in filtered.columns:
         start_date, end_date = date_range
-        filtered = filtered[
-            (filtered["fecha_creacion"].dt.date >= start_date)
-            & (filtered["fecha_creacion"].dt.date <= end_date)
-        ]
+        fecha_creacion = pd.to_datetime(filtered["fecha_creacion"], errors="coerce")
+        start_dt = pd.Timestamp(start_date).normalize()
+        end_dt = pd.Timestamp(end_date).normalize() + pd.Timedelta(days=1)
+
+        mask = fecha_creacion.notna() & (fecha_creacion >= start_dt) & (fecha_creacion < end_dt)
+        filtered = filtered.loc[mask]
 
     return filtered

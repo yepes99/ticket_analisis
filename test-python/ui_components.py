@@ -96,10 +96,10 @@ def render_welcome_header():
         <div class="hero">
             <div class="hero-topline">
                 <span class="eyebrow">Dashboard operativo</span>
-                <span class="timestamp">Esperando archivo CSV</span>
+                <span class="timestamp">Esperando datos de Jira</span>
             </div>
             <h1>Dashboard Jira Pro</h1>
-            <p>Sube un archivo CSV desde la barra lateral para visualizar KPIs, SLAs, ranking de tecnicos y clientes con mayor volumen de tickets.</p>
+            <p>La app carga los tickets directamente desde Jira para visualizar KPIs, SLAs, ranking de técnicos y clientes con mayor volumen de tickets.</p>
         </div>
         """,
         unsafe_allow_html=True,

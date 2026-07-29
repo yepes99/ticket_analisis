@@ -10,7 +10,14 @@ import streamlit as st
 import config
 from styles import apply_styles
 from auth import check_authentication
-from data import load_and_validate_data, show_welcome_if_no_file, render_filters, apply_filters
+from data import (
+    apply_filters,
+    load_and_validate_data,
+    load_snapshot_data,
+    refresh_jira_snapshot,
+    render_filters,
+    snapshot_exists,
+)
 from report import generate_excel_report, generate_pdf_report
 from ui_components import (
     render_hero_header,
@@ -83,30 +90,49 @@ check_authentication()
 # SIDEBAR - CARGA DE DATOS
 # =========================
 st.sidebar.markdown("## Carga de datos")
-st.sidebar.caption("Sube un CSV de tickets exportado desde Jira para activar el dashboard.")
+st.sidebar.caption("Consulta Jira con el token configurado en secretos.")
 
-uploaded_file = st.sidebar.file_uploader(
-    "Selecciona un CSV",
-    type=["csv"],
-    label_visibility="collapsed",
-)
+if "jira_df" not in st.session_state:
+    st.session_state["jira_df"] = None
+if "jira_source" not in st.session_state:
+    st.session_state["jira_source"] = None
+
+if st.session_state["jira_df"] is None and snapshot_exists():
+    try:
+        st.session_state["jira_df"] = load_snapshot_data()
+        st.session_state["jira_source"] = "snapshot local"
+    except Exception as exc:
+        st.sidebar.warning(f"No se pudo cargar el snapshot local: {exc}")
+
+if st.sidebar.button("Cargar 20 tickets de Jira", type="primary", use_container_width=True):
+    with st.spinner("Consultando Jira..."):
+        st.session_state["jira_df"] = load_and_validate_data(None, max_results=20)
+        st.session_state["jira_source"] = "Jira (20 tickets)"
+
+if st.sidebar.button("Actualizar todos desde Jira", use_container_width=True):
+    with st.spinner("Actualizando snapshot desde Jira..."):
+        st.session_state["jira_df"] = refresh_jira_snapshot()
+        st.session_state["jira_source"] = "snapshot actualizado desde Jira"
 
 st.sidebar.markdown("---")
-st.sidebar.caption("Los datos se procesan en memoria durante la sesión y no se almacenan.")
-
-
-# =========================
-# VALIDACIÓN DE ARCHIVO
-# =========================
-if uploaded_file is None:
-    show_welcome_if_no_file()
-    st.stop()
+st.sidebar.caption("La actualización completa se guarda en output/jira_snapshot.csv.")
 
 
 # =========================
 # CARGA DE DATOS
 # =========================
-df = load_and_validate_data(uploaded_file)
+if st.session_state["jira_df"] is None:
+    render_hero_header(
+        title="Dashboard Web â€” Equipo de Soporte",
+        description="Seguimiento de tareas, cumplimiento de SLA y rendimiento del equipo: Leslie Jara Â· Carmen Yepes Â· Jorge Gallego.",
+        timestamp=datetime.now().strftime(config.DATE_FORMAT),
+    )
+    st.info("Pulsa el botón de la barra lateral para cargar 20 tickets o actualizar todos desde Jira.")
+    st.stop()
+
+df = st.session_state["jira_df"]
+source = st.session_state.get("jira_source") or "Jira"
+st.sidebar.success(f"{len(df)} tickets cargados desde {source}.")
 
 clientes_filter, asignadores_filter, sizes_filter, date_range = render_filters(df)
 
@@ -138,7 +164,7 @@ backlog_df = apply_filters(
 )
 
 if filtered.empty:
-    st.warning("No se encontraron tareas asignadas a Leslie Jara, Carmen Yepes o Jorge Gallego en este CSV.")
+    st.warning("No se encontraron tareas asignadas a Leslie Jara, Carmen Yepes o Jorge Gallego en los datos de Jira.")
     st.stop()
     # Si no estamos ejecutando como app de Streamlit (p.e. durante import/tests),
     # detener también la ejecución del intérprete para evitar errores posteriores.
@@ -237,7 +263,7 @@ except Exception:
 
 kpi_grid(
     [
-        ("Total tareas", f"{kpis['total_tickets']:,}".replace(",", "."), "Tareas cargadas en el CSV", ""),
+        ("Total tareas", f"{kpis['total_tickets']:,}".replace(",", "."), "Tareas cargadas desde Jira", ""),
         ("SLA prioridad", f"{kpis['sla_prioridad']}%", "% tareas resueltas dentro del plazo por prioridad", "success"),
         ("SLA size", f"{kpis['sla_size']}%", "% tareas resueltas dentro del plazo por tamaño", "warning"),
         (
@@ -273,7 +299,7 @@ kpi_grid(
 # =========================
 section_title(
     "🗂 Backlog — Tareas sin iniciar",
-    "Todas las tareas en estado Backlog del CSV, independientemente de si tienen técnico asignado o no. "
+    "Todas las tareas en estado Backlog de Jira, independientemente de si tienen técnico asignado o no. "
     "Cuanto más tiempo lleven aquí sin iniciarse, mayor el riesgo de incumplir el SLA.",
 )
 
@@ -281,7 +307,7 @@ backlog_kpis = calculate_backlog_kpis(backlog_df)
 
 kpi_grid(
     [
-        ("Total en backlog", str(backlog_kpis["total"]), "Tareas sin iniciar en todo el CSV", "warning"),
+        ("Total en backlog", str(backlog_kpis["total"]), "Tareas sin iniciar en todo Jira", "warning"),
     ]
 )
 
@@ -335,7 +361,7 @@ if not backlog_detalle.empty:
         },
     )
 else:
-    empty_state("No hay tareas en estado Backlog en este CSV.")
+    empty_state("No hay tareas en estado Backlog en Jira.")
 
 
 # Evolución temporal: sección eliminada por petición del usuario.
@@ -431,7 +457,7 @@ if not tech_sla_df.empty:
 # =========================
 section_title(
     "🔁 Tickets reabiertos",
-    "Tickets con señales de reabertura detectadas en el resumen, descripción o estado del propio CSV.",
+    "Tickets con señales de reabertura detectadas en el resumen, descripción o estado de Jira.",
 )
 
 reopened_df = calculate_reopened_tickets(filtered)
