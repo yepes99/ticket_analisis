@@ -4,6 +4,7 @@ import unicodedata
 
 import pandas as pd
 import requests
+import streamlit as st
 import tomllib
 
 from categorias import completar_categorias
@@ -110,7 +111,18 @@ def procesar_tickets_jira(df):
 
 
 def leer_config_jira():
+    try:
+        return dict(st.secrets["JIRA"])
+    except Exception:
+        pass
+
     secrets_path = Path(__file__).resolve().parent / ".streamlit" / "secrets.toml"
+    if not secrets_path.exists():
+        raise FileNotFoundError(
+            "No se encontro la configuracion de Jira. En Streamlit Cloud agrega "
+            "la seccion [JIRA] en App settings > Secrets."
+        )
+
     with secrets_path.open("rb") as fh:
         return tomllib.load(fh)["JIRA"]
 
