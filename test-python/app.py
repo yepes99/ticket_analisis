@@ -124,7 +124,7 @@ periodo = st.sidebar.selectbox(
 selected_year = st.sidebar.selectbox("Ano", available_years())
 query_start_date, query_end_date = resolve_query_dates(periodo, selected_year)
 
-if st.sidebar.button("Consultar Jira", type="primary", use_container_width=True):
+if st.sidebar.button("Consultar Jira", type="primary", width="stretch"):
     with st.spinner("Consultando Jira..."):
         st.session_state["jira_df"] = load_and_validate_jira_data(
             max_results=None,
@@ -152,7 +152,7 @@ if st.session_state["jira_df"] is None:
         description="Seguimiento de tareas, cumplimiento de SLA y rendimiento del equipo: Leslie Jara Â· Carmen Yepes Â· Jorge Gallego.",
         timestamp=datetime.now().strftime(config.DATE_FORMAT),
     )
-    st.info("Elige cantidad de tickets y periodo en la barra lateral para consultar Jira.")
+    st.info("Elige el periodo en la barra lateral para consultar Jira.")
     st.stop()
 
 df = st.session_state["jira_df"]
@@ -332,21 +332,21 @@ if not antiguedad_df.empty:
     col1, col2, col3 = st.columns(3)
     with col1:
         st.caption("⏱ Por antigüedad — tiempo que llevan sin iniciarse")
-        st.dataframe(antiguedad_df, use_container_width=True, hide_index=True,
+        st.dataframe(antiguedad_df, width="stretch", hide_index=True,
             column_config={
                 "antigüedad": "Tramo",
                 "tickets": stcc.NumberColumn("Nº tareas", format="%d"),
             })
     with col2:
         st.caption("🔺 Por prioridad — urgencia de las tareas pendientes")
-        st.dataframe(prioridad_backlog_df, use_container_width=True, hide_index=True,
+        st.dataframe(prioridad_backlog_df, width="stretch", hide_index=True,
             column_config={
                 "prioridad": "Prioridad",
                 "tickets": stcc.NumberColumn("Nº tareas", format="%d"),
             })
     with col3:
         st.caption("📦 Por tamaño (size) — estimación de esfuerzo")
-        st.dataframe(size_backlog_df, use_container_width=True, hide_index=True,
+        st.dataframe(size_backlog_df, width="stretch", hide_index=True,
             column_config={
                 "size": "Tamaño",
                 "tickets": stcc.NumberColumn("Nº tareas", format="%d"),
@@ -358,7 +358,7 @@ if not backlog_detalle.empty:
     st.caption("Listado completo de tareas en backlog, ordenadas de más a menos antigua.")
     st.dataframe(
         backlog_detalle,
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
         column_config={
             "ticket_id": "Ticket",
@@ -393,7 +393,7 @@ if not sla_size_df.empty:
     render_chart_wrapper(create_sla_comparison_chart(sla_size_df))
     st.dataframe(
         sla_size_df,
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
         column_config={
             "size": "Tamaño",
@@ -443,7 +443,7 @@ if not ranking.empty:
     st.caption("Ranking por volumen de tareas. Las barras de SLA indican el porcentaje de tareas resueltas dentro del plazo.")
     st.dataframe(
         ranking,
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
         column_config={
             "asignado_a": "Técnico",
@@ -483,7 +483,7 @@ if not reopened_df.empty:
     st.caption("Listado de tickets con indicios de reapertura.")
     st.dataframe(
         reopened_df,
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
         column_config={
             "ticket_id": "Ticket",
@@ -547,7 +547,7 @@ if cliente_seleccionado:
         st.caption("Tareas ordenadas de más reciente a más antigua.")
         st.dataframe(
             detalle_df,
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
             column_config={
                 "ticket_id": "Ticket",

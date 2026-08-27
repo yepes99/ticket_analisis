@@ -160,7 +160,7 @@ def render_chart_wrapper(fig, use_container_width=True, key=None):
 
     st.plotly_chart(
         fig,
-        use_container_width=use_container_width,
+        width="stretch" if use_container_width else "content",
         config={"displayModeBar": False, "responsive": True},
         key=key,
     )

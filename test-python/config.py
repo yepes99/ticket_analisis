@@ -3,6 +3,7 @@ Configuración central de la aplicación.
 """
 
 # Constantes de autenticación
+PROJECT_KEY = "WP"
 REQUIRED_COLUMNS = ["cliente", "asignado_a", "size"]
 
 # Colores y tema

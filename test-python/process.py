@@ -98,7 +98,10 @@ def cargar_tickets_jira(
         jql=jql,
     )
     df = transformar_payload_jira(payload)
-    return procesar_tickets_jira(df)
+    df = procesar_tickets_jira(df)
+    if "tipo" in df.columns:
+        df = df[df["tipo"].astype("string").str.casefold() == "bug"].copy()
+    return df
 
 
 def procesar_tickets_jira(df):
