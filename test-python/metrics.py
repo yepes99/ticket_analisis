@@ -15,7 +15,7 @@ def pct(series):
     value = numeric.mean(skipna=True)
     if pd.isna(value):
         return 0.0
-    return round(value * 100, 1)
+    return float(round(value * 100, 1))
 
 
 REOPENED_TERMS = [
@@ -43,7 +43,7 @@ def calculate_sla_kpis(df):
     tickets_resueltos = int(df["resuelto"].sum()) if "resuelto" in df else 0
     dias_promedio = 0.0
     if "dias_resolucion" in df and not df["dias_resolucion"].dropna().empty:
-        dias_promedio = round(df["dias_resolucion"].mean(skipna=True), 1)
+        dias_promedio = float(round(df["dias_resolucion"].mean(skipna=True), 1))
 
     return {
         "sla_prioridad": pct(df["sla_prioridad_cumple"]),

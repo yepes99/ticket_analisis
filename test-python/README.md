@@ -43,7 +43,7 @@ pip install -r requirements.txt
 ## Ejecutar
 
 ```bash
-streamlit run app.py
+
 ```
 
 Al abrir la aplicacion, sube el CSV desde la barra lateral. El archivo se procesa en memoria y no se guarda en el repositorio.

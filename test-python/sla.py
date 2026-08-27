@@ -2,10 +2,6 @@ import numpy as np
 import pandas as pd
 
 
-# =========================
-# CONFIG SLA
-# =========================
-
 SLA_PRIORIDAD_HORAS = {
     "Highest": 4,
     "High": 8,
@@ -22,122 +18,162 @@ SLA_SIZE_DIAS = {
 }
 
 DEFAULT_SLA_HORAS = 24
+RISK_THRESHOLD = 0.8
+ESTADOS_RESUELTOS = {
+    "finalizada",
+    "finalizado",
+    "done",
+    "closed",
+    "cerrada",
+    "cerrado",
+    "resuelta",
+    "resuelto",
+    "resolved",
+    "completada",
+    "completado",
+    "terminada",
+    "terminado",
+}
 
 
-# =========================
-# MÉTRICAS BASE
-# =========================
+def normalizar_prioridad(series):
+    return series.astype("string").str.strip()
+
+
+def normalizar_size(series):
+    return (
+        series.astype("string")
+        .str.strip()
+        .str.upper()
+        .replace({"": pd.NA, "NAN": pd.NA, "NONE": pd.NA, "<NA>": pd.NA})
+    )
+
+
 def completar_metricas_resolucion(df):
-    """
-    Calcula métricas de resolución de tickets.
-    
-    Un ticket se considera RESUELTO si:
-    - Su Estado es "Finalizada"
-    
-    (Alternativa: basarse en fecha_resolucion, pero usar Estado es más confiable)
-    """
     df = df.copy()
 
+    fecha_creacion = pd.to_datetime(df["fecha_creacion"], errors="coerce")
+    fecha_resolucion = pd.to_datetime(df["fecha_resolucion"], errors="coerce")
+    ahora = pd.Timestamp.now()
+
     df["horas_resolucion"] = (
-        (df["fecha_resolucion"] - df["fecha_creacion"])
-        .dt.total_seconds() / 3600
+        (fecha_resolucion - fecha_creacion).dt.total_seconds() / 3600
     ).round(2)
 
     df["dias_resolucion"] = np.where(
-        df["fecha_resolucion"].notna(),
-        (df["fecha_resolucion"] - df["fecha_creacion"]).dt.total_seconds() / 86400,
+        fecha_resolucion.notna() & fecha_creacion.notna(),
+        (fecha_resolucion - fecha_creacion).dt.total_seconds() / 86400,
         np.nan,
     )
 
-    # Resuelto si el Estado es "Finalizada" (independientemente de mayúsculas o espacios)
     estado_normalizado = df["estado"].astype("string").fillna("").str.strip().str.lower()
-    df["resuelto"] = (estado_normalizado == "finalizada").astype(int)
+    df["resuelto"] = (fecha_resolucion.notna() | estado_normalizado.isin(ESTADOS_RESUELTOS)).astype(int)
 
-    df["dias_abierto"] = np.where(
-        df["fecha_resolucion"].isna(),
-        (pd.Timestamp.now() - df["fecha_creacion"]).dt.days,
-        (df["fecha_resolucion"] - df["fecha_creacion"]).dt.days,
-    )
+    fecha_fin = fecha_resolucion.where(fecha_resolucion.notna(), ahora)
+    df["horas_transcurridas"] = (
+        (fecha_fin - fecha_creacion).dt.total_seconds() / 3600
+    ).round(2)
+    df.loc[fecha_creacion.isna(), "horas_transcurridas"] = np.nan
+    df["dias_abierto"] = np.floor(df["horas_transcurridas"] / 24)
 
     return df
 
 
-# =========================
-# SLA PRIORIDAD
-# =========================
+def evaluar_cumplimiento(tiempo_resolucion, tiempo_transcurrido, objetivo, resuelto):
+    tiempo_resolucion = pd.to_numeric(tiempo_resolucion, errors="coerce")
+    tiempo_transcurrido = pd.to_numeric(tiempo_transcurrido, errors="coerce")
+    objetivo = pd.to_numeric(objetivo, errors="coerce")
+    resuelto = pd.to_numeric(resuelto, errors="coerce").fillna(0).astype(int)
+
+    cumple = pd.Series(np.nan, index=objetivo.index, dtype="float64")
+    resuelto_evaluable = (resuelto == 1) & tiempo_resolucion.notna() & objetivo.notna()
+    abierto_vencido = (
+        (resuelto == 0)
+        & tiempo_transcurrido.notna()
+        & objetivo.notna()
+        & (tiempo_transcurrido > objetivo)
+    )
+
+    cumple.loc[resuelto_evaluable] = (
+        tiempo_resolucion.loc[resuelto_evaluable] <= objetivo.loc[resuelto_evaluable]
+    ).astype(float)
+    cumple.loc[abierto_vencido] = 0.0
+    return cumple
+
+
+def calcular_en_riesgo(tiempo_transcurrido, objetivo, resuelto):
+    tiempo_transcurrido = pd.to_numeric(tiempo_transcurrido, errors="coerce")
+    objetivo = pd.to_numeric(objetivo, errors="coerce")
+    resuelto = pd.to_numeric(resuelto, errors="coerce").fillna(0).astype(int)
+
+    return (
+        (resuelto == 0)
+        & tiempo_transcurrido.notna()
+        & objetivo.notna()
+        & (tiempo_transcurrido >= objetivo * RISK_THRESHOLD)
+        & (tiempo_transcurrido <= objetivo)
+    ).astype(int)
+
+
+def calcular_sla_global(sla_prioridad, sla_size):
+    componentes = pd.concat(
+        [
+            pd.to_numeric(sla_prioridad, errors="coerce"),
+            pd.to_numeric(sla_size, errors="coerce"),
+        ],
+        axis=1,
+    )
+    global_cumple = pd.Series(np.nan, index=componentes.index, dtype="float64")
+
+    global_cumple.loc[(componentes == 0).any(axis=1)] = 0.0
+    global_cumple.loc[componentes.notna().all(axis=1) & (componentes == 1).all(axis=1)] = 1.0
+    return global_cumple
+
+
 def completar_sla_prioridad(df):
     df = df.copy()
 
     df["sla_horas_objetivo"] = (
-        df["prioridad"]
+        normalizar_prioridad(df["prioridad"])
         .map(SLA_PRIORIDAD_HORAS)
         .fillna(DEFAULT_SLA_HORAS)
     )
 
-    df["sla_prioridad_cumple"] = np.where(
-        df["horas_resolucion"] <= df["sla_horas_objetivo"],
-        1,
-        0
+    df["sla_prioridad_cumple"] = evaluar_cumplimiento(
+        df["horas_resolucion"],
+        df["horas_transcurridas"],
+        df["sla_horas_objetivo"],
+        df["resuelto"],
     )
-
-    df["sla_prioridad_incumple"] = np.where(
-        df["horas_resolucion"] > df["sla_horas_objetivo"],
-        1,
-        0
-    )
-
-    df["en_riesgo_sla"] = np.where(
-        (df["resuelto"] == 0) &
-        (df["dias_abierto"] * 24 > df["sla_horas_objetivo"]),
-        1,
-        0
+    df["sla_prioridad_incumple"] = (df["sla_prioridad_cumple"] == 0).astype(int)
+    df["en_riesgo_sla"] = calcular_en_riesgo(
+        df["horas_transcurridas"],
+        df["sla_horas_objetivo"],
+        df["resuelto"],
     )
 
     return df
 
 
-# =========================
-# SLA SIZE
-# =========================
 def completar_sla_size(df):
     df = df.copy()
 
-    df["sla_size_dias"] = (
-        df["size"]
-        .astype(str)
-        .str.strip()
-        .map(SLA_SIZE_DIAS)
-    )
-
+    df["size"] = normalizar_size(df["size"])
+    df["sla_size_dias"] = df["size"].map(SLA_SIZE_DIAS)
     df["desviacion_sla"] = df["dias_resolucion"] - df["sla_size_dias"]
-
-    df["sla_size_cumple"] = np.where(
-        df["dias_resolucion"] <= df["sla_size_dias"],
-        1,
-        0
+    df["sla_size_cumple"] = evaluar_cumplimiento(
+        df["dias_resolucion"],
+        df["horas_transcurridas"] / 24,
+        df["sla_size_dias"],
+        df["resuelto"],
     )
-
-    df.loc[df["sla_size_dias"].isna(), "sla_size_cumple"] = np.nan
 
     return df
 
 
-# =========================
-# PIPELINE SLA COMPLETO
-# =========================
 def completar_sla(df):
     df = completar_metricas_resolucion(df)
     df = completar_sla_prioridad(df)
     df = completar_sla_size(df)
-
-    # =========================
-    # SLA GLOBAL (PRO)
-    # =========================
-    df["sla_global_cumple"] = np.where(
-        (df["sla_prioridad_cumple"] == 1) &
-        (df["sla_size_cumple"] == 1),
-        1,
-        0
-    )
-
+    df["sla_global_cumple"] = calcular_sla_global(df["sla_prioridad_cumple"], df["sla_size_cumple"])
     return df

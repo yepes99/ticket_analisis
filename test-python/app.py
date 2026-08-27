@@ -123,7 +123,7 @@ st.sidebar.caption("La actualización completa se guarda en output/jira_snapshot
 # =========================
 if st.session_state["jira_df"] is None:
     render_hero_header(
-        title="Dashboard Web â€” Equipo de Soporte",
+        title="Dashboard Web” Equipo de Soporte",
         description="Seguimiento de tareas, cumplimiento de SLA y rendimiento del equipo: Leslie Jara Â· Carmen Yepes Â· Jorge Gallego.",
         timestamp=datetime.now().strftime(config.DATE_FORMAT),
     )
