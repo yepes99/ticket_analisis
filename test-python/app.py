@@ -42,6 +42,7 @@ from charts import (
     create_priority_bar_chart,
     create_avg_resolution_chart,
     create_technician_sla_chart,
+    create_top_clients_chart,
 )
 from backlog_metrics import (
     calculate_backlog_kpis,
@@ -197,7 +198,8 @@ if filtered.empty:
 # EXPORTAR
 # =========================
 st.sidebar.markdown("## Exportar")
-st.sidebar.caption("Descarga un resumen de los datos actuales.")
+st.sidebar.caption("Descarga el resumen del periodo y los filtros seleccionados.")
+st.sidebar.caption(f"Incluye {filtered['ticket_id'].nunique()} bugs Jira únicos.")
 
 try:
     kpis_export = calculate_sla_kpis(filtered)
@@ -216,7 +218,7 @@ try:
         tech_sla_export,
     )
     st.sidebar.download_button(
-        "Descargar Excel",
+        "Descargar Excel del periodo",
         data=excel_bytes,
         file_name=f"reporte_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -229,7 +231,7 @@ try:
         pdf_bytes = bytes(pdf_bytes)
     pdf_buffer = BytesIO(pdf_bytes) if isinstance(pdf_bytes, (bytes, bytearray)) else pdf_bytes
     st.sidebar.download_button(
-        "Descargar PDF",
+        "Descargar PDF del periodo",
         data=pdf_buffer,
         file_name=f"reporte_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
         mime="application/pdf",
@@ -502,7 +504,33 @@ else:
     empty_state("No se detectaron tickets con señales de reapertura en los filtros actuales.")
 
 
-# Clientes summary removed per request: UI no longer shows global clients table
+# =========================
+# CLIENTES — RESUMEN
+# =========================
+section_title(
+    "Tickets por cliente",
+    "Conteo exacto de bugs Jira únicos, con el nombre comercial separado del dominio.",
+)
+clientes_resumen = calculate_top_clients(filtered)
+if not clientes_resumen.empty:
+    chart_col, table_col = st.columns([1, 1.35], gap="large")
+    with chart_col:
+        render_chart_wrapper(create_top_clients_chart(clientes_resumen.head(20)))
+    with table_col:
+        st.dataframe(
+            clientes_resumen,
+            width="stretch",
+            hide_index=True,
+            column_config={
+                "cliente": stcc.TextColumn("Cliente", width="medium"),
+                "dominios": stcc.TextColumn("Domain / URL", width="large"),
+                "tickets": stcc.NumberColumn("Tickets Bug", format="%d"),
+                "sla": stcc.NumberColumn("SLA global", format="%.1f%%"),
+                "tiempo": stcc.NumberColumn("Tiempo medio", format="%.1f días"),
+            },
+        )
+else:
+    empty_state("No hay clientes para los filtros actuales.")
 
 
 # =========================
@@ -551,6 +579,9 @@ if cliente_seleccionado:
             hide_index=True,
             column_config={
                 "ticket_id": "Ticket",
+                "cliente_nombre": "Cliente",
+                "cliente_domain": "Domain",
+                "cliente_url": stcc.LinkColumn("URL", display_text="Abrir URL"),
                 "resumen": stcc.TextColumn("Descripción", width="large"),
                 "tipo": "Tipo",
                 "estado": "Estado",

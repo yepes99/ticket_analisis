@@ -41,11 +41,26 @@ def normalizar_cliente(valor):
 
 def completar_cliente(df):
     df = df.copy()
-    df["cliente"] = np.nan
+    domain_source = df["cliente_domain"].copy() if "cliente_domain" in df.columns else pd.Series(np.nan, index=df.index)
+    df["cliente_nombre"] = np.nan
+    df["cliente_domain"] = np.nan
+    df["cliente_url"] = domain_source
 
-    for col in CLIENTE_FIELDS:
+    df["cliente_domain"] = domain_source.apply(normalizar_cliente)
+
+    for col in ["cliente_dominio", "cliente_web", "cliente_empresa"]:
         if col in df.columns:
-            df["cliente"] = df["cliente"].fillna(df[col])
+            domain_values = df[col].apply(normalizar_cliente)
+            df["cliente_domain"] = df["cliente_domain"].fillna(domain_values)
+
+    if "resumen" in df.columns:
+        df["cliente_nombre"] = (
+            df["resumen"]
+            .astype("string")
+            .str.extract(r"^\s*([^|\-\u2013]+?)\s*(?:\||\-|\u2013)", expand=False)
+            .str.strip()
+            .replace({"": np.nan})
+        )
 
     if "descripcion" in df.columns:
         dominio_desc = (
@@ -53,16 +68,8 @@ def completar_cliente(df):
             .astype(str)
             .str.extract(r"https?://([^/|\s]+)", expand=False)
         )
-        df["cliente"] = df["cliente"].fillna(dominio_desc)
+        df["cliente_domain"] = df["cliente_domain"].fillna(dominio_desc.apply(normalizar_cliente))
 
-    if "resumen" in df.columns:
-        cliente_resumen = (
-            df["resumen"]
-            .astype(str)
-            .str.extract(r"^([^\-\u2013]+)\s*[\-\u2013]", expand=False)
-            .str.strip()
-        )
-        df["cliente"] = df["cliente"].fillna(cliente_resumen)
-
-    df["cliente"] = df["cliente"].apply(normalizar_cliente)
+    df["cliente"] = df["cliente_nombre"].fillna(df["cliente_domain"])
+    df["cliente"] = df["cliente"].fillna("Sin cliente")
     return df

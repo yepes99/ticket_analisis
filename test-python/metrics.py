@@ -180,10 +180,17 @@ def calculate_top_clients(df):
     """
     data = df.copy()
     data["cliente"] = data["cliente"].fillna("Sin cliente")
+    if "cliente_domain" not in data.columns:
+        data["cliente_domain"] = pd.NA
+    if "sla_global_cumple" not in data.columns:
+        data["sla_global_cumple"] = pd.NA
+    if "dias_resolucion" not in data.columns:
+        data["dias_resolucion"] = pd.NA
     clientes_df = (
         data.groupby("cliente", dropna=False)
         .agg(
             tickets=("ticket_id", "nunique"),
+            dominios=("cliente_domain", lambda values: ", ".join(sorted(set(values.dropna())))),
             sla=("sla_global_cumple", "mean"),
             tiempo=("dias_resolucion", "mean"),
         )
@@ -204,6 +211,9 @@ def calculate_client_ticket_detail(df, cliente):
     """
     cols_disponibles = [
         "ticket_id",
+        "cliente_nombre",
+        "cliente_domain",
+        "cliente_url",
         "resumen",
         "tipo",
         "estado",
