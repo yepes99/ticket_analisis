@@ -110,7 +110,7 @@ def calculate_technician_sla_summary(df, top_n=15):
 def calculate_reopened_tickets(df):
     """
     Identifica tickets con señales de reaparición a partir del resumen, descripción y estado.
-    Esto se basa en texto estructurado del propio CSV, ya que no hay historial de cambios.
+    Esto se basa en texto estructurado del ticket, ya que no hay historial de cambios.
     """
     if df.empty:
         return pd.DataFrame(columns=["ticket_id", "resumen", "estado", "cliente", "asignado_a", "fecha_creacion", "fecha_resolucion"])
@@ -176,7 +176,7 @@ def calculate_technician_ranking(df):
 
 def calculate_top_clients(df):
     """
-    Devuelve TODOS los clientes del CSV ordenados por volumen de tareas.
+    Devuelve todos los clientes consultados en Jira ordenados por volumen de tareas.
     """
     clientes_df = (
         df.groupby("cliente")

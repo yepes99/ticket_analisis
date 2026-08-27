@@ -1,28 +1,34 @@
-# Proyecto Python - Dashboard de Tickets
+# Dashboard Jira
 
-Este proyecto procesa y analiza tickets a partir de un archivo CSV subido desde la aplicacion Streamlit. Aplica limpieza de datos, normalizacion de clientes, calculo de SLAs y metricas analiticas.
+Dashboard profesional en Streamlit para consultar tickets directamente desde Jira, calcular SLAs y analizar rendimiento operativo por tecnico, cliente, prioridad y size.
 
 ## Caracteristicas
 
-- Carga de CSV mediante file uploader en Streamlit
+- Consulta directa a Jira mediante token configurado en `.streamlit/secrets.toml`
+- Selector de cantidad de tickets a mostrar
+- Rangos rapidos de fecha: ultima semana, ultimo mes y ultimo ano
+- Rango personalizado de fecha de creacion
 - Limpieza y transformacion de datos de tickets
-- Normalizacion de clientes, dominios y URLs
 - Calculo de tiempos de resolucion
-- Evaluacion de SLA por prioridad y size
+- Evaluacion precisa de SLA por prioridad, size y global
 - Clasificacion automatica de categorias
 
-## Estructura del proyecto
+## Estructura
 
 ```text
 test-python/
-- app.py (orquestador principal)
-- config.py (configuración, constantes y colores)
-- styles.py (CSS)
-- ui_components.py (funciones de UI reutilizables)
-- auth.py (autenticación)
-- data.py (carga y validación de datos)
-- metrics.py (cálculo de KPIs)
-- charts.py (visualizaciones)
+- app.py
+- config.py
+- styles.py
+- ui_components.py
+- auth.py
+- data.py
+- process.py
+- sla.py
+- metrics.py
+- charts.py
+- report.py
+```
 
 ## Instalacion
 
@@ -32,20 +38,10 @@ venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-En Linux o macOS:
-
-```bash
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-```
-
 ## Ejecutar
 
-```bash
-
+```powershell
+streamlit run app.py
 ```
 
-Al abrir la aplicacion, sube el CSV desde la barra lateral. El archivo se procesa en memoria y no se guarda en el repositorio.
-
-Los archivos CSV estan ignorados por Git mediante `.gitignore` para evitar subir datos sensibles por accidente.
+Al abrir la aplicacion, elige en la barra lateral cuantos tickets quieres consultar y el periodo de creacion. Los datos se consultan directamente desde Jira.

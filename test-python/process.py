@@ -11,16 +11,9 @@ from categorias import completar_categorias
 from cliente import completar_cliente
 from sla import completar_sla
 
-def normalize_str(value):
-    value = str(value).strip().lower()
-    value = unicodedata.normalize("NFKD", value)
-    return "".join(ch for ch in value if not unicodedata.combining(ch))
 
-
-
-INPUT_FILE = Path(__file__).with_name("data.csv")
-SNAPSHOT_FILE = Path(__file__).resolve().parent / "output" / "jira_snapshot.csv"
 DATE_FORMAT = "%d/%b/%y %I:%M %p"
+DATE_FIELDS = ["fecha_creacion", "fecha_actualizacion", "fecha_resolucion"]
 JIRA_BASE_FIELDS = [
     "summary",
     "issuetype",
@@ -40,32 +33,29 @@ JIRA_FIELD_ALIASES = {
     "cliente_dominio": ["Dominio", "Campo personalizado (Dominio)"],
     "cliente_empresa": ["Cliente / Empresa", "Campo personalizado (Cliente / Empresa)"],
 }
-
-COLUMN_MAPPING = {
-    "Clave de incidencia": "ticket_id",
-    "ID de la incidencia": "ticket_num",
-    "Resumen": "resumen",
-    "Tipo de Incidencia": "tipo",
-    "Estado": "estado",
-    "Categoría de estado": "categoria_estado",
-    "Prioridad": "prioridad",
-    "Resolución": "resolucion",
-    "Clave del proyecto": "proyecto_clave",
-    "Nombre del proyecto": "proyecto_nombre",
-    "Persona asignada": "asignado_a",
-    "Informador": "informador",
-    "Creada": "fecha_creacion",
-    "Actualizada": "fecha_actualizacion",
-    "Resuelta": "fecha_resolucion",
-    "Descripción": "descripcion",
-    "Campo personalizado (Web del Cliente / Empresa)": "cliente_web",
-    "Campo personalizado (Domain)": "cliente_domain",
-    "Campo personalizado (Dominio)": "cliente_dominio",
-    "Campo personalizado (Cliente / Empresa)": "cliente_empresa",
-    "Campo personalizado (Size)": "size",
-}
-
-DATE_FIELDS = ["fecha_creacion", "fecha_actualizacion", "fecha_resolucion"]
+JIRA_COLUMNS = [
+    "ticket_id",
+    "ticket_num",
+    "resumen",
+    "tipo",
+    "estado",
+    "categoria_estado",
+    "prioridad",
+    "resolucion",
+    "proyecto_clave",
+    "proyecto_nombre",
+    "asignado_a",
+    "informador",
+    "fecha_creacion",
+    "fecha_actualizacion",
+    "fecha_resolucion",
+    "descripcion",
+    "cliente_web",
+    "cliente_domain",
+    "cliente_dominio",
+    "cliente_empresa",
+    "size",
+]
 SPANISH_MONTHS = {
     "ene": "Jan",
     "feb": "Feb",
@@ -83,35 +73,19 @@ SPANISH_MONTHS = {
 }
 
 
-def cargar_tickets(input_file=INPUT_FILE):
-    if hasattr(input_file, "read") and not isinstance(input_file, (str, Path)):
-        try:
-            input_file.seek(0)
-            return cargar_tickets_csv(input_file)
-        except Exception:
-            return cargar_tickets_jira()
-
-    if isinstance(input_file, (str, Path)) and Path(input_file).exists():
-        return cargar_tickets_csv(input_file)
-
-    return cargar_tickets_jira()
+def normalize_str(value):
+    value = str(value).strip().lower()
+    value = unicodedata.normalize("NFKD", value)
+    return "".join(ch for ch in value if not unicodedata.combining(ch))
 
 
-def cargar_tickets_csv(input_file):
-    df = cargar_columnas(input_file)
-    df = convertir_fechas(df)
-    df = completar_cliente(df)
-    df = completar_categorias(df)
-    df = completar_sla(df)
-    df = completar_fechas_analiticas(df)
-    return df
-
-
-def cargar_tickets_jira(max_results=10, page_size=100, pause_seconds=0.2):
+def cargar_tickets_jira(max_results=100, start_date=None, end_date=None, page_size=100, pause_seconds=0.2):
     jira_config = leer_config_jira()
     payload = consultar_jira_paginas(
         jira_config,
         max_results=max_results,
+        start_date=start_date,
+        end_date=end_date,
         page_size=page_size,
         pause_seconds=pause_seconds,
     )
@@ -147,9 +121,7 @@ def leer_config_jira():
 
 def resolver_campo_jira(jira_config, field_name):
     explicit = jira_config.get(f"{field_name.upper()}_FIELD")
-    if explicit:
-        return explicit
-    return None
+    return explicit or None
 
 
 def consultar_campos_jira(jira_config):
@@ -191,10 +163,40 @@ def preparar_campos_jira(jira_config):
     return ",".join(JIRA_BASE_FIELDS + field_ids), resolved
 
 
-def consultar_jira(jira_config, max_results=10, next_page_token=None, fields=None):
+def formatear_fecha_jql(value):
+    if value is None:
+        return None
+    return pd.Timestamp(value).strftime("%Y-%m-%d")
+
+
+def componer_jql(base_jql, start_date=None, end_date=None):
+    filtros_fecha = []
+    start_value = formatear_fecha_jql(start_date)
+    end_value = formatear_fecha_jql(end_date)
+
+    if start_value:
+        filtros_fecha.append(f'created >= "{start_value}"')
+    if end_value:
+        end_exclusive = (pd.Timestamp(end_value) + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
+        filtros_fecha.append(f'created < "{end_exclusive}"')
+    if not filtros_fecha:
+        return base_jql
+
+    order_clause = ""
+    jql_body = base_jql.strip()
+    order_marker = " order by "
+    marker_pos = jql_body.lower().find(order_marker)
+    if marker_pos >= 0:
+        order_clause = jql_body[marker_pos:]
+        jql_body = jql_body[:marker_pos].strip()
+
+    return f"({jql_body}) AND {' AND '.join(filtros_fecha)}{order_clause}"
+
+
+def consultar_jira(jira_config, max_results=100, next_page_token=None, fields=None, start_date=None, end_date=None):
     url = jira_config["API_URL"].rstrip("/") + "/rest/api/3/search/jql"
     params = {
-        "jql": jira_config["JQL"],
+        "jql": componer_jql(jira_config["JQL"], start_date=start_date, end_date=end_date),
         "maxResults": max_results,
         "fields": fields or ",".join(JIRA_BASE_FIELDS),
     }
@@ -212,7 +214,7 @@ def consultar_jira(jira_config, max_results=10, next_page_token=None, fields=Non
     return response.json()
 
 
-def consultar_jira_paginas(jira_config, max_results=10, page_size=100, pause_seconds=0.2):
+def consultar_jira_paginas(jira_config, max_results=100, start_date=None, end_date=None, page_size=100, pause_seconds=0.2):
     all_issues = []
     next_page_token = None
     fields, field_map = preparar_campos_jira(jira_config)
@@ -228,6 +230,8 @@ def consultar_jira_paginas(jira_config, max_results=10, page_size=100, pause_sec
             max_results=current_page_size,
             next_page_token=next_page_token,
             fields=fields,
+            start_date=start_date,
+            end_date=end_date,
         )
         issues = payload.get("issues", [])
         all_issues.extend(issues)
@@ -248,31 +252,33 @@ def transformar_payload_jira(payload):
     rows = []
     for issue in issues:
         fields = issue.get("fields", {})
-        rows.append({
-            "ticket_id": issue.get("key"),
-            "ticket_num": issue.get("id"),
-            "resumen": fields.get("summary"),
-            "tipo": extraer_propiedad_jira(fields.get("issuetype"), "name"),
-            "estado": extraer_propiedad_jira(fields.get("status"), "name"),
-            "categoria_estado": None,
-            "prioridad": extraer_propiedad_jira(fields.get("priority"), "name"),
-            "resolucion": None,
-            "proyecto_clave": extraer_propiedad_jira(fields.get("project"), "key"),
-            "proyecto_nombre": extraer_propiedad_jira(fields.get("project"), "name"),
-            "asignado_a": extraer_propiedad_jira(fields.get("assignee"), "displayName"),
-            "informador": None,
-            "fecha_creacion": fields.get("created"),
-            "fecha_actualizacion": fields.get("updated"),
-            "fecha_resolucion": fields.get("resolutiondate"),
-            "descripcion": extraer_texto_jira(fields.get("description")),
-            "cliente_web": extraer_valor_campo_jira(fields, field_map.get("cliente_web")),
-            "cliente_domain": extraer_valor_campo_jira(fields, field_map.get("cliente_domain")),
-            "cliente_dominio": extraer_valor_campo_jira(fields, field_map.get("cliente_dominio")),
-            "cliente_empresa": extraer_valor_campo_jira(fields, field_map.get("cliente_empresa")),
-            "size": extraer_valor_campo_jira(fields, field_map.get("size")),
-        })
+        rows.append(
+            {
+                "ticket_id": issue.get("key"),
+                "ticket_num": issue.get("id"),
+                "resumen": fields.get("summary"),
+                "tipo": extraer_propiedad_jira(fields.get("issuetype"), "name"),
+                "estado": extraer_propiedad_jira(fields.get("status"), "name"),
+                "categoria_estado": None,
+                "prioridad": extraer_propiedad_jira(fields.get("priority"), "name"),
+                "resolucion": None,
+                "proyecto_clave": extraer_propiedad_jira(fields.get("project"), "key"),
+                "proyecto_nombre": extraer_propiedad_jira(fields.get("project"), "name"),
+                "asignado_a": extraer_propiedad_jira(fields.get("assignee"), "displayName"),
+                "informador": None,
+                "fecha_creacion": fields.get("created"),
+                "fecha_actualizacion": fields.get("updated"),
+                "fecha_resolucion": fields.get("resolutiondate"),
+                "descripcion": extraer_texto_jira(fields.get("description")),
+                "cliente_web": extraer_valor_campo_jira(fields, field_map.get("cliente_web")),
+                "cliente_domain": extraer_valor_campo_jira(fields, field_map.get("cliente_domain")),
+                "cliente_dominio": extraer_valor_campo_jira(fields, field_map.get("cliente_dominio")),
+                "cliente_empresa": extraer_valor_campo_jira(fields, field_map.get("cliente_empresa")),
+                "size": extraer_valor_campo_jira(fields, field_map.get("size")),
+            }
+        )
 
-    df = pd.DataFrame(rows)
+    df = pd.DataFrame(rows, columns=JIRA_COLUMNS)
     if df.empty:
         return df
 
@@ -328,41 +334,6 @@ def extraer_texto_jira(value):
         parts = [extraer_texto_jira(item) for item in value.get("content", [])]
         return " ".join(part for part in parts if part)
     return str(value)
-
-
-def guardar_snapshot_jira(df, path=SNAPSHOT_FILE):
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    df.to_csv(path, index=False, encoding="utf-8")
-    return path
-
-
-def cargar_snapshot_jira(path=SNAPSHOT_FILE):
-    path = Path(path)
-    df = pd.read_csv(path, low_memory=False, encoding="utf-8", encoding_errors="ignore")
-    df = convertir_fechas(df)
-    if "mes_creacion" not in df.columns and "fecha_creacion" in df.columns:
-        df = completar_fechas_analiticas(df)
-    return df
-
-
-def cargar_columnas(input_file):
-    if hasattr(input_file, "seek"):
-        input_file.seek(0)
-
-    df_raw = pd.read_csv(input_file, low_memory=False, encoding="utf-8", encoding_errors="ignore")
-    normalized_headers = {normalize_str(col): col for col in df_raw.columns}
-
-    existing_cols = {}
-    for original, renamed in COLUMN_MAPPING.items():
-        normalized_key = normalize_str(original)
-        if normalized_key in normalized_headers:
-            existing_cols[normalized_headers[normalized_key]] = renamed
-
-    if not existing_cols:
-        raise ValueError("No se encontraron columnas válidas en el CSV. Revisa la cabecera del archivo.")
-
-    return df_raw[list(existing_cols.keys())].rename(columns=existing_cols).copy()
 
 
 def convertir_fechas(df):

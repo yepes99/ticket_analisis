@@ -2,7 +2,7 @@
 Dashboard Jira Pro - Aplicación principal.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from io import BytesIO
 import math
 import streamlit as st
@@ -12,11 +12,8 @@ from styles import apply_styles
 from auth import check_authentication
 from data import (
     apply_filters,
-    load_and_validate_data,
-    load_snapshot_data,
-    refresh_jira_snapshot,
+    load_and_validate_jira_data,
     render_filters,
-    snapshot_exists,
 )
 from report import generate_excel_report, generate_pdf_report
 from ui_components import (
@@ -76,6 +73,19 @@ def format_percent(value):
 # =========================
 # CONFIGURACIÓN INICIAL
 # =========================
+def resolve_query_dates(periodo, fecha_personalizada):
+    today = datetime.now().date()
+    if periodo == "Ultima semana":
+        return today - timedelta(days=6), today
+    if periodo == "Ultimo mes":
+        return today - timedelta(days=30), today
+    if periodo == "Ultimo ano":
+        return today - timedelta(days=365), today
+    if isinstance(fecha_personalizada, (list, tuple)) and len(fecha_personalizada) == 2:
+        return fecha_personalizada
+    return None, None
+
+
 st.set_page_config(**config.PAGE_CONFIG)
 apply_styles()
 
@@ -97,25 +107,44 @@ if "jira_df" not in st.session_state:
 if "jira_source" not in st.session_state:
     st.session_state["jira_source"] = None
 
-if st.session_state["jira_df"] is None and snapshot_exists():
-    try:
-        st.session_state["jira_df"] = load_snapshot_data()
-        st.session_state["jira_source"] = "snapshot local"
-    except Exception as exc:
-        st.sidebar.warning(f"No se pudo cargar el snapshot local: {exc}")
+ticket_limit = st.sidebar.number_input(
+    "Tickets a mostrar",
+    min_value=1,
+    max_value=5000,
+    value=100,
+    step=25,
+)
+periodo = st.sidebar.selectbox(
+    "Periodo",
+    ["Ultima semana", "Ultimo mes", "Ultimo ano", "Personalizado", "Sin limite de fecha"],
+)
 
-if st.sidebar.button("Cargar 20 tickets de Jira", type="primary", use_container_width=True):
+fecha_personalizada = None
+if periodo == "Personalizado":
+    today = datetime.now().date()
+    fecha_personalizada = st.sidebar.date_input(
+        "Rango de creacion",
+        value=(today - timedelta(days=30), today),
+        max_value=today,
+    )
+
+query_start_date, query_end_date = resolve_query_dates(periodo, fecha_personalizada)
+
+if st.sidebar.button("Consultar Jira", type="primary", use_container_width=True):
     with st.spinner("Consultando Jira..."):
-        st.session_state["jira_df"] = load_and_validate_data(None, max_results=20)
-        st.session_state["jira_source"] = "Jira (20 tickets)"
-
-if st.sidebar.button("Actualizar todos desde Jira", use_container_width=True):
-    with st.spinner("Actualizando snapshot desde Jira..."):
-        st.session_state["jira_df"] = refresh_jira_snapshot()
-        st.session_state["jira_source"] = "snapshot actualizado desde Jira"
+        st.session_state["jira_df"] = load_and_validate_jira_data(
+            max_results=int(ticket_limit),
+            start_date=query_start_date,
+            end_date=query_end_date,
+        )
+        if query_start_date and query_end_date:
+            periodo_label = f"{query_start_date.strftime('%d/%m/%Y')} - {query_end_date.strftime('%d/%m/%Y')}"
+        else:
+            periodo_label = "sin limite de fecha"
+        st.session_state["jira_source"] = f"Jira ({int(ticket_limit)} tickets, {periodo_label})"
 
 st.sidebar.markdown("---")
-st.sidebar.caption("La actualización completa se guarda en output/jira_snapshot.csv.")
+st.sidebar.caption("Los datos se consultan directamente desde Jira.")
 
 
 # =========================
@@ -127,7 +156,7 @@ if st.session_state["jira_df"] is None:
         description="Seguimiento de tareas, cumplimiento de SLA y rendimiento del equipo: Leslie Jara Â· Carmen Yepes Â· Jorge Gallego.",
         timestamp=datetime.now().strftime(config.DATE_FORMAT),
     )
-    st.info("Pulsa el botón de la barra lateral para cargar 20 tickets o actualizar todos desde Jira.")
+    st.info("Elige cantidad de tickets y periodo en la barra lateral para consultar Jira.")
     st.stop()
 
 df = st.session_state["jira_df"]
@@ -245,7 +274,7 @@ section_title("Resumen global", "Visión general de todas las tareas del equipo 
 try:
     kpis = calculate_sla_kpis(filtered)
 except Exception:
-    # En contextos de import (sin archivos válidos) o DataFrame vacío,
+    # En un DataFrame vacío o con columnas incompletas,
     # devolvemos valores por defecto para que la UI no falle.
     kpis = {
         "total_tickets": 0,

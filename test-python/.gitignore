@@ -48,9 +48,3 @@ dist/
 .DS_Store
 Thumbs.db
 
-# =========================
-# ARCHIVOS DE DATOS 
-# =========================
-
-*.csv
-!output/clients-transformados.csv
