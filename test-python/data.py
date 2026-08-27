@@ -1,15 +1,15 @@
-import pandas as pd
 import streamlit as st
 
 from config import REQUIRED_COLUMNS, TECNICOS_PERMITIDOS
 from process import cargar_tickets_jira
 
 
-def load_jira_data(max_results=100, start_date=None, end_date=None):
+def load_jira_data(max_results=None, start_date=None, end_date=None, jql=None):
     return cargar_tickets_jira(
         max_results=max_results,
         start_date=start_date,
         end_date=end_date,
+        jql=jql,
     )
 
 
@@ -18,12 +18,13 @@ def validate_columns(df):
     return len(missing) == 0, missing
 
 
-def load_and_validate_jira_data(max_results=100, start_date=None, end_date=None):
+def load_and_validate_jira_data(max_results=None, start_date=None, end_date=None, jql=None):
     try:
         df = load_jira_data(
             max_results=max_results,
             start_date=start_date,
             end_date=end_date,
+            jql=jql,
         )
     except Exception as exc:
         st.error(f"Error cargando datos desde Jira: {exc}")
@@ -67,25 +68,10 @@ def render_filters(df):
             sorted(df["size"].dropna().unique()),
         )
 
-    if "fecha_creacion" in df.columns and not df["fecha_creacion"].dropna().empty:
-        min_date = df["fecha_creacion"].min().date()
-        max_date = df["fecha_creacion"].max().date()
-    else:
-        today = pd.Timestamp.now().date()
-        min_date = today
-        max_date = today
-
-    date_range = st.sidebar.date_input(
-        "Refinar fecha de creacion",
-        value=(min_date, max_date),
-        min_value=min_date,
-        max_value=max_date,
-    )
-
-    return clientes, asignadores, sizes, date_range
+    return clientes, asignadores, sizes
 
 
-def apply_filters(df, clientes=None, asignadores=None, sizes=None, date_range=None):
+def apply_filters(df, clientes=None, asignadores=None, sizes=None):
     filtered = df.copy()
 
     if clientes:
@@ -96,14 +82,5 @@ def apply_filters(df, clientes=None, asignadores=None, sizes=None, date_range=No
 
     if sizes:
         filtered = filtered[filtered["size"].isin(sizes)]
-
-    if date_range and len(date_range) == 2 and "fecha_creacion" in filtered.columns:
-        start_date, end_date = date_range
-        fecha_creacion = pd.to_datetime(filtered["fecha_creacion"], errors="coerce")
-        start_dt = pd.Timestamp(start_date).normalize()
-        end_dt = pd.Timestamp(end_date).normalize() + pd.Timedelta(days=1)
-
-        mask = fecha_creacion.notna() & (fecha_creacion >= start_dt) & (fecha_creacion < end_dt)
-        filtered = filtered.loc[mask]
 
     return filtered

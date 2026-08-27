@@ -26,11 +26,9 @@ app.py
 
 La barra lateral permite indicar:
 
-- cantidad maxima de tickets
+- hoy
 - ultima semana
 - ultimo mes
-- ultimo ano
-- rango personalizado
-- sin limite de fecha
+- cualquier ano de los ultimos 10 anos
 
 Los filtros de fecha se aplican en JQL sobre `created` antes de descargar los tickets.

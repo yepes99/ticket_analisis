@@ -79,7 +79,14 @@ def normalize_str(value):
     return "".join(ch for ch in value if not unicodedata.combining(ch))
 
 
-def cargar_tickets_jira(max_results=100, start_date=None, end_date=None, page_size=100, pause_seconds=0.2):
+def cargar_tickets_jira(
+    max_results=None,
+    start_date=None,
+    end_date=None,
+    page_size=100,
+    pause_seconds=0.2,
+    jql=None,
+):
     jira_config = leer_config_jira()
     payload = consultar_jira_paginas(
         jira_config,
@@ -88,6 +95,7 @@ def cargar_tickets_jira(max_results=100, start_date=None, end_date=None, page_si
         end_date=end_date,
         page_size=page_size,
         pause_seconds=pause_seconds,
+        jql=jql,
     )
     df = transformar_payload_jira(payload)
     return procesar_tickets_jira(df)
@@ -193,10 +201,18 @@ def componer_jql(base_jql, start_date=None, end_date=None):
     return f"({jql_body}) AND {' AND '.join(filtros_fecha)}{order_clause}"
 
 
-def consultar_jira(jira_config, max_results=100, next_page_token=None, fields=None, start_date=None, end_date=None):
+def consultar_jira(
+    jira_config,
+    max_results=100,
+    next_page_token=None,
+    fields=None,
+    start_date=None,
+    end_date=None,
+    jql=None,
+):
     url = jira_config["API_URL"].rstrip("/") + "/rest/api/3/search/jql"
     params = {
-        "jql": componer_jql(jira_config["JQL"], start_date=start_date, end_date=end_date),
+        "jql": componer_jql(jql or jira_config["JQL"], start_date=start_date, end_date=end_date),
         "maxResults": max_results,
         "fields": fields or ",".join(JIRA_BASE_FIELDS),
     }
@@ -214,7 +230,15 @@ def consultar_jira(jira_config, max_results=100, next_page_token=None, fields=No
     return response.json()
 
 
-def consultar_jira_paginas(jira_config, max_results=100, start_date=None, end_date=None, page_size=100, pause_seconds=0.2):
+def consultar_jira_paginas(
+    jira_config,
+    max_results=100,
+    start_date=None,
+    end_date=None,
+    page_size=100,
+    pause_seconds=0.2,
+    jql=None,
+):
     all_issues = []
     next_page_token = None
     fields, field_map = preparar_campos_jira(jira_config)
@@ -232,6 +256,7 @@ def consultar_jira_paginas(jira_config, max_results=100, start_date=None, end_da
             fields=fields,
             start_date=start_date,
             end_date=end_date,
+            jql=jql,
         )
         issues = payload.get("issues", [])
         all_issues.extend(issues)
@@ -281,6 +306,8 @@ def transformar_payload_jira(payload):
     df = pd.DataFrame(rows, columns=JIRA_COLUMNS)
     if df.empty:
         return df
+
+    df = df.drop_duplicates(subset=["ticket_id"], keep="first").reset_index(drop=True)
 
     df["fecha_creacion"] = pd.to_datetime(df["fecha_creacion"], errors="coerce")
     df["fecha_actualizacion"] = pd.to_datetime(df["fecha_actualizacion"], errors="coerce")

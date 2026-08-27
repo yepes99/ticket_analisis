@@ -10,6 +10,7 @@ import streamlit as st
 import config
 from styles import apply_styles
 from auth import check_authentication
+from process import leer_config_jira
 from data import (
     apply_filters,
     load_and_validate_jira_data,
@@ -73,17 +74,24 @@ def format_percent(value):
 # =========================
 # CONFIGURACIÓN INICIAL
 # =========================
-def resolve_query_dates(periodo, fecha_personalizada):
-    today = datetime.now().date()
+def resolve_query_dates(periodo, year, today=None):
+    today = today or datetime.now().date()
+
+    if periodo == "Hoy":
+        return today, today
     if periodo == "Ultima semana":
         return today - timedelta(days=6), today
     if periodo == "Ultimo mes":
-        return today - timedelta(days=30), today
-    if periodo == "Ultimo ano":
-        return today - timedelta(days=365), today
-    if isinstance(fecha_personalizada, (list, tuple)) and len(fecha_personalizada) == 2:
-        return fecha_personalizada
-    return None, None
+        return today - timedelta(days=29), today
+    if periodo == "Ano":
+        return datetime(year, 1, 1).date(), datetime(year, 12, 31).date()
+
+    raise ValueError(f"Periodo no soportado: {periodo}")
+
+
+def available_years(today=None):
+    today = today or datetime.now().date()
+    return list(range(today.year, today.year - 11, -1))
 
 
 st.set_page_config(**config.PAGE_CONFIG)
@@ -106,42 +114,30 @@ if "jira_df" not in st.session_state:
     st.session_state["jira_df"] = None
 if "jira_source" not in st.session_state:
     st.session_state["jira_source"] = None
+if "jira_backlog_df" not in st.session_state:
+    st.session_state["jira_backlog_df"] = None
 
-ticket_limit = st.sidebar.number_input(
-    "Tickets a mostrar",
-    min_value=1,
-    max_value=5000,
-    value=100,
-    step=25,
-)
 periodo = st.sidebar.selectbox(
     "Periodo",
-    ["Ultima semana", "Ultimo mes", "Ultimo ano", "Personalizado", "Sin limite de fecha"],
+    ["Hoy", "Ultima semana", "Ultimo mes", "Ano"],
 )
-
-fecha_personalizada = None
-if periodo == "Personalizado":
-    today = datetime.now().date()
-    fecha_personalizada = st.sidebar.date_input(
-        "Rango de creacion",
-        value=(today - timedelta(days=30), today),
-        max_value=today,
-    )
-
-query_start_date, query_end_date = resolve_query_dates(periodo, fecha_personalizada)
+selected_year = st.sidebar.selectbox("Ano", available_years())
+query_start_date, query_end_date = resolve_query_dates(periodo, selected_year)
 
 if st.sidebar.button("Consultar Jira", type="primary", use_container_width=True):
     with st.spinner("Consultando Jira..."):
         st.session_state["jira_df"] = load_and_validate_jira_data(
-            max_results=int(ticket_limit),
+            max_results=None,
             start_date=query_start_date,
             end_date=query_end_date,
         )
-        if query_start_date and query_end_date:
-            periodo_label = f"{query_start_date.strftime('%d/%m/%Y')} - {query_end_date.strftime('%d/%m/%Y')}"
-        else:
-            periodo_label = "sin limite de fecha"
-        st.session_state["jira_source"] = f"Jira ({int(ticket_limit)} tickets, {periodo_label})"
+        jira_config = leer_config_jira()
+        st.session_state["jira_backlog_df"] = load_and_validate_jira_data(
+            max_results=None,
+            jql=jira_config["BACKLOG_JQL"],
+        )
+        periodo_label = f"{query_start_date.strftime('%d/%m/%Y')} - {query_end_date.strftime('%d/%m/%Y')}"
+        st.session_state["jira_source"] = f"Jira ({periodo_label})"
 
 st.sidebar.markdown("---")
 st.sidebar.caption("Los datos se consultan directamente desde Jira.")
@@ -163,37 +159,24 @@ df = st.session_state["jira_df"]
 source = st.session_state.get("jira_source") or "Jira"
 st.sidebar.success(f"{len(df)} tickets cargados desde {source}.")
 
-clientes_filter, asignadores_filter, sizes_filter, date_range = render_filters(df)
+clientes_filter, asignadores_filter, sizes_filter = render_filters(df)
 
-# El resto del dashboard: solo los 3 técnicos permitidos (defensivo si falta la columna)
-if "asignado_a" in df.columns:
-    team_df = df[df["asignado_a"].isin(config.TECNICOS_PERMITIDOS)].copy()
-else:
-    team_df = df.copy()
 filtered = apply_filters(
-    team_df,
+    df,
     clientes=clientes_filter,
     asignadores=asignadores_filter,
     sizes=sizes_filter,
-    date_range=date_range,
 )
 
-# Backlog: todas las tareas en estado Backlog con los filtros aplicados
-if "estado" in df.columns:
-    backlog_source = df[df["estado"].astype(str).str.lower() == "backlog"].copy()
-else:
-    backlog_source = df.iloc[0:0].copy()
-
 backlog_df = apply_filters(
-    backlog_source,
+    st.session_state["jira_backlog_df"] if st.session_state["jira_backlog_df"] is not None else df.iloc[0:0].copy(),
     clientes=clientes_filter,
     asignadores=asignadores_filter,
     sizes=sizes_filter,
-    date_range=date_range,
 )
 
 if filtered.empty:
-    st.warning("No se encontraron tareas asignadas a Leslie Jara, Carmen Yepes o Jorge Gallego en los datos de Jira.")
+    st.warning("No se encontraron bugs en los datos de Jira para el periodo seleccionado.")
     st.stop()
     # Si no estamos ejecutando como app de Streamlit (p.e. durante import/tests),
     # detener también la ejecución del intérprete para evitar errores posteriores.

@@ -135,7 +135,7 @@ def calculate_sla_size_comparison(df):
         df[df["sla_size_dias"].notna()]
         .groupby("size")
         .agg(
-            tickets=("ticket_id", "count"),
+            tickets=("ticket_id", "nunique"),
             objetivo=("sla_size_dias", "mean"),
             real=("dias_resolucion", "mean"),
             cumplimiento=("sla_size_cumple", "mean"),
@@ -155,7 +155,7 @@ def calculate_technician_ranking(df):
     ranking = (
         df.groupby("asignado_a")
         .agg(
-            tickets=("ticket_id", "count"),
+            tickets=("ticket_id", "nunique"),
             resueltos=("resuelto", "sum"),
             sla_size=("sla_size_cumple", "mean"),
             sla_prioridad=("sla_prioridad_cumple", "mean"),
@@ -178,10 +178,12 @@ def calculate_top_clients(df):
     """
     Devuelve todos los clientes consultados en Jira ordenados por volumen de tareas.
     """
+    data = df.copy()
+    data["cliente"] = data["cliente"].fillna("Sin cliente")
     clientes_df = (
-        df.groupby("cliente")
+        data.groupby("cliente", dropna=False)
         .agg(
-            tickets=("ticket_id", "count"),
+            tickets=("ticket_id", "nunique"),
             sla=("sla_global_cumple", "mean"),
             tiempo=("dias_resolucion", "mean"),
         )

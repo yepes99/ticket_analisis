@@ -4,7 +4,7 @@ from unittest.mock import patch
 import numpy as np
 import pandas as pd
 
-from metrics import calculate_sla_kpis
+from metrics import calculate_sla_kpis, calculate_top_clients
 from sla import completar_sla
 
 
@@ -77,6 +77,34 @@ class SlaCasesTest(unittest.TestCase):
                 },
             ]
         )
+
+    def test_client_counts_use_unique_jira_keys(self):
+        df = pd.DataFrame(
+            [
+                {"ticket_id": "WEB-1", "cliente": "cliente-a", "sla_global_cumple": 1, "dias_resolucion": 1},
+                {"ticket_id": "WEB-1", "cliente": "cliente-a", "sla_global_cumple": 1, "dias_resolucion": 1},
+                {"ticket_id": "WEB-2", "cliente": "cliente-a", "sla_global_cumple": 0, "dias_resolucion": 2},
+                {"ticket_id": "WEB-3", "cliente": "cliente-b", "sla_global_cumple": 1, "dias_resolucion": 1},
+            ]
+        )
+
+        result = calculate_top_clients(df).set_index("cliente")
+
+        self.assertEqual(result.loc["cliente-a", "tickets"], 2)
+        self.assertEqual(result.loc["cliente-b", "tickets"], 1)
+
+    def test_client_counts_include_tickets_without_client(self):
+        df = pd.DataFrame(
+            [
+                {"ticket_id": "WEB-1", "cliente": None, "sla_global_cumple": 1, "dias_resolucion": 1},
+                {"ticket_id": "WEB-2", "cliente": "cliente-a", "sla_global_cumple": 1, "dias_resolucion": 1},
+            ]
+        )
+
+        result = calculate_top_clients(df).set_index("cliente")
+
+        self.assertEqual(result.loc["Sin cliente", "tickets"], 1)
+        self.assertEqual(result["tickets"].sum(), df["ticket_id"].nunique())
 
     @patch("sla.pd.Timestamp.now")
     def test_sla_cases_are_classified_precisely(self, mock_now):
