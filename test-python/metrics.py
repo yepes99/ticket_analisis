@@ -186,13 +186,17 @@ def calculate_top_clients(df):
         data["sla_global_cumple"] = pd.NA
     if "dias_resolucion" not in data.columns:
         data["dias_resolucion"] = pd.NA
+    if "horas_resolucion" not in data.columns:
+        data["horas_resolucion"] = pd.NA
+    data["horas_resolucion"] = pd.to_numeric(data["horas_resolucion"], errors="coerce")
     clientes_df = (
         data.groupby("cliente", dropna=False)
         .agg(
             tickets=("ticket_id", "nunique"),
             dominios=("cliente_domain", lambda values: ", ".join(sorted(set(values.dropna())))),
             sla=("sla_global_cumple", "mean"),
-            tiempo=("dias_resolucion", "mean"),
+            tiempo_horas=("horas_resolucion", "mean"),
+            tickets_sin_tiempo=("horas_resolucion", lambda values: int(values.isna().sum())),
         )
         .reset_index()
         .sort_values("tickets", ascending=False)
@@ -200,9 +204,26 @@ def calculate_top_clients(df):
 
     if not clientes_df.empty:
         clientes_df["sla"] = (clientes_df["sla"] * 100).round(1)
-        clientes_df["tiempo"] = clientes_df["tiempo"].round(1)
+        clientes_df["tiempo_horas"] = clientes_df["tiempo_horas"].round(1)
 
     return clientes_df
+
+
+def apply_resolution_hour_overrides(df, overrides):
+    """Aplica correcciones manuales de horas sin modificar la respuesta de Jira."""
+    result = df.copy()
+    if not overrides or "ticket_id" not in result.columns:
+        return result
+
+    if "horas_resolucion" not in result.columns:
+        result["horas_resolucion"] = pd.NA
+    result["horas_resolucion"] = pd.to_numeric(result["horas_resolucion"], errors="coerce")
+    result["dias_resolucion"] = result["horas_resolucion"] / 24
+    for ticket_id, hours in overrides.items():
+        mask = result["ticket_id"].eq(ticket_id)
+        result.loc[mask, "horas_resolucion"] = float(hours)
+        result.loc[mask, "dias_resolucion"] = float(hours) / 24
+    return result
 
 
 def calculate_client_ticket_detail(df, cliente):

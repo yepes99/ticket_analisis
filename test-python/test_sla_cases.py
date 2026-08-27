@@ -4,7 +4,7 @@ from unittest.mock import patch
 import numpy as np
 import pandas as pd
 
-from metrics import calculate_sla_kpis, calculate_top_clients
+from metrics import apply_resolution_hour_overrides, calculate_sla_kpis, calculate_top_clients
 from sla import completar_sla
 
 
@@ -105,6 +105,17 @@ class SlaCasesTest(unittest.TestCase):
 
         self.assertEqual(result.loc["Sin cliente", "tickets"], 1)
         self.assertEqual(result["tickets"].sum(), df["ticket_id"].nunique())
+
+    def test_resolution_hour_override_updates_client_time(self):
+        df = pd.DataFrame(
+            [{"ticket_id": "WEB-1", "horas_resolucion": 12.0, "dias_resolucion": 0.5}]
+        )
+
+        result = apply_resolution_hour_overrides(df, {"WEB-1": 8.0})
+
+        self.assertEqual(result.loc[0, "ticket_id"], "WEB-1")
+        self.assertEqual(result.loc[0, "horas_resolucion"], 8.0)
+        self.assertEqual(result.loc[0, "dias_resolucion"], 8.0 / 24)
 
     @patch("sla.pd.Timestamp.now")
     def test_sla_cases_are_classified_precisely(self, mock_now):

@@ -5,6 +5,7 @@ Dashboard Jira Pro - Aplicación principal.
 from datetime import datetime, timedelta
 from io import BytesIO
 import math
+import pandas as pd
 import streamlit as st
 
 import config
@@ -75,7 +76,7 @@ def format_percent(value):
 # =========================
 # CONFIGURACIÓN INICIAL
 # =========================
-def resolve_query_dates(periodo, year, today=None):
+def resolve_query_dates(periodo, year, custom_range=None, today=None):
     today = today or datetime.now().date()
 
     if periodo == "Hoy":
@@ -86,6 +87,11 @@ def resolve_query_dates(periodo, year, today=None):
         return today - timedelta(days=29), today
     if periodo == "Ano":
         return datetime(year, 1, 1).date(), datetime(year, 12, 31).date()
+    if periodo == "Personalizado" and custom_range and len(custom_range) == 2:
+        start_date, end_date = custom_range
+        if start_date > end_date:
+            raise ValueError("La fecha inicial no puede ser posterior a la fecha final.")
+        return start_date, end_date
 
     raise ValueError(f"Periodo no soportado: {periodo}")
 
@@ -93,6 +99,20 @@ def resolve_query_dates(periodo, year, today=None):
 def available_years(today=None):
     today = today or datetime.now().date()
     return list(range(today.year, today.year - 11, -1))
+
+
+def apply_resolution_hour_overrides(df, overrides):
+    result = df.copy()
+    if not overrides or "ticket_id" not in result.columns:
+        return result
+
+    result["horas_resolucion"] = pd.to_numeric(result["horas_resolucion"], errors="coerce")
+    result["dias_resolucion"] = result["horas_resolucion"] / 24
+    for ticket_id, hours in overrides.items():
+        mask = result["ticket_id"].eq(ticket_id)
+        result.loc[mask, "horas_resolucion"] = float(hours)
+        result.loc[mask, "dias_resolucion"] = float(hours) / 24
+    return result
 
 
 st.set_page_config(**config.PAGE_CONFIG)
@@ -120,10 +140,27 @@ if "jira_backlog_df" not in st.session_state:
 
 periodo = st.sidebar.selectbox(
     "Periodo",
-    ["Hoy", "Ultima semana", "Ultimo mes", "Ano"],
+    ["Hoy", "Ultima semana", "Ultimo mes", "Ano", "Personalizado"],
 )
-selected_year = st.sidebar.selectbox("Ano", available_years())
-query_start_date, query_end_date = resolve_query_dates(periodo, selected_year)
+selected_year = datetime.now().year
+if periodo == "Ano":
+    selected_year = st.sidebar.selectbox("Ano", available_years())
+custom_range = None
+if periodo == "Personalizado":
+    today = datetime.now().date()
+    custom_range = st.sidebar.date_input(
+        "Desde / hasta",
+        value=(today - timedelta(days=30), today),
+        max_value=today,
+    )
+    if len(custom_range) != 2:
+        st.sidebar.warning("Selecciona una fecha inicial y una fecha final.")
+        st.stop()
+    if custom_range[0] > custom_range[1]:
+        st.sidebar.error("La fecha inicial debe ser anterior o igual a la fecha final.")
+        st.stop()
+
+query_start_date, query_end_date = resolve_query_dates(periodo, selected_year, custom_range)
 
 if st.sidebar.button("Consultar Jira", type="primary", width="stretch"):
     with st.spinner("Consultando Jira..."):
@@ -135,6 +172,8 @@ if st.sidebar.button("Consultar Jira", type="primary", width="stretch"):
         jira_config = leer_config_jira()
         st.session_state["jira_backlog_df"] = load_and_validate_jira_data(
             max_results=None,
+            start_date=query_start_date,
+            end_date=query_end_date,
             jql=jira_config["BACKLOG_JQL"],
         )
         periodo_label = f"{query_start_date.strftime('%d/%m/%Y')} - {query_end_date.strftime('%d/%m/%Y')}"
@@ -168,6 +207,9 @@ filtered = apply_filters(
     asignadores=asignadores_filter,
     sizes=sizes_filter,
 )
+if "resolution_hour_overrides" not in st.session_state:
+    st.session_state["resolution_hour_overrides"] = {}
+filtered = apply_resolution_hour_overrides(filtered, st.session_state["resolution_hour_overrides"])
 
 backlog_df = apply_filters(
     st.session_state["jira_backlog_df"] if st.session_state["jira_backlog_df"] is not None else df.iloc[0:0].copy(),
@@ -525,8 +567,9 @@ if not clientes_resumen.empty:
                 "cliente": stcc.TextColumn("Cliente", width="medium"),
                 "dominios": stcc.TextColumn("Domain / URL", width="large"),
                 "tickets": stcc.NumberColumn("Tickets Bug", format="%d"),
+                "tickets_sin_tiempo": stcc.NumberColumn("Sin tiempo", format="%d"),
                 "sla": stcc.NumberColumn("SLA global", format="%.1f%%"),
-                "tiempo": stcc.NumberColumn("Tiempo medio", format="%.1f días"),
+                "tiempo_horas": stcc.NumberColumn("Tiempo medio", format="%.1f h"),
             },
         )
 else:
@@ -553,6 +596,26 @@ cliente_seleccionado = st.selectbox(
 if cliente_seleccionado:
     detalle_df = calculate_client_ticket_detail(filtered, cliente_seleccionado)
 
+    with st.expander("Corregir horas de resolución", expanded=False):
+        st.caption("Los tickets abiertos o sin resolutiondate aparecen sin tiempo. La corrección se guarda solo en esta sesión.")
+        can_edit_hours = st.checkbox("Tengo permiso para corregir este ticket", key="can_edit_hours")
+        ticket_options = detalle_df["ticket_id"].dropna().astype(str).tolist()
+        if can_edit_hours and ticket_options:
+            ticket_to_edit = st.selectbox("Ticket", ticket_options, key="ticket_to_edit")
+            current_hours = detalle_df.loc[
+                detalle_df["ticket_id"].astype(str).eq(ticket_to_edit), "horas_resolucion"
+            ].iloc[0]
+            corrected_hours = st.number_input(
+                "Horas correctas",
+                min_value=0.0,
+                value=float(current_hours) if pd.notna(current_hours) else 0.0,
+                step=0.25,
+                key="corrected_hours",
+            )
+            if st.button("Guardar corrección", key="save_hours_correction", width="stretch"):
+                st.session_state["resolution_hour_overrides"][ticket_to_edit] = corrected_hours
+                st.rerun()
+
     total = len(detalle_df)
     if "resuelto" in detalle_df.columns:
         resueltos = int(detalle_df["resuelto"].sum())
@@ -561,20 +624,28 @@ if cliente_seleccionado:
     else:
         resueltos = 0
 
-    tiempo_medio = round(detalle_df["dias_resolucion"].mean(), 1) if "dias_resolucion" in detalle_df.columns else "-"
+    average_hours = detalle_df["horas_resolucion"].mean() if "horas_resolucion" in detalle_df.columns else pd.NA
+    average_hours_label = f"{average_hours:.1f} h" if pd.notna(average_hours) else "Sin datos"
 
     kpi_grid(
         [
             ("Tareas", str(total), f"Total de {cliente_seleccionado}", ""),
             ("Resueltas", str(resueltos), "En estado Finalizada", "success"),
-            ("Tiempo medio", f"{tiempo_medio} días", "Días desde creación hasta cierre", ""),
+            ("Tiempo medio", average_hours_label, "Horas desde creación hasta cierre", ""),
         ]
     )
 
     if not detalle_df.empty:
         st.caption("Tareas ordenadas de más reciente a más antigua.")
+        def highlight_overdue_hours(row):
+            try:
+                is_over_limit = float(row.get("horas_resolucion", 0)) > 10
+            except (TypeError, ValueError):
+                is_over_limit = False
+            return ["background-color: rgba(255, 107, 107, 0.28); color: #fff" if is_over_limit else "" for _ in row]
+
         st.dataframe(
-            detalle_df,
+            detalle_df.style.apply(highlight_overdue_hours, axis=1),
             width="stretch",
             hide_index=True,
             column_config={
@@ -590,7 +661,6 @@ if cliente_seleccionado:
                 "asignado_a": "Técnico",
                 "fecha_creacion": stcc.DatetimeColumn("Creado", format="DD/MM/YYYY"),
                 "fecha_resolucion": stcc.DatetimeColumn("Resuelto", format="DD/MM/YYYY"),
-                "dias_resolucion": stcc.NumberColumn("Días resolución", format="%.1f días"),
                 "horas_resolucion": stcc.NumberColumn("Horas resolución", format="%.1f h"),
                 # SLA columns removed per request
             },

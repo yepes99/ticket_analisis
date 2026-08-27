@@ -133,7 +133,7 @@ def generate_pdf_report(kpis, top_clients, top_tech):
         add_table(
             "Top clientes",
             top_clients,
-            ["cliente", "tickets", "sla", "tiempo"],
+            ["cliente", "tickets", "sla", "tiempo_horas"],
         )
 
     if not top_tech.empty:
