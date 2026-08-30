@@ -34,7 +34,6 @@ from metrics import (
     calculate_ticket_trends,
     calculate_status_summary,
     calculate_priority_summary,
-    calculate_client_ticket_detail,
     calculate_reopened_tickets,
 )
 from charts import (
@@ -43,20 +42,9 @@ from charts import (
     create_priority_bar_chart,
     create_avg_resolution_chart,
     create_technician_sla_chart,
-    create_top_clients_chart,
 )
-from backlog_metrics import (
-    calculate_backlog_kpis,
-    calculate_backlog_por_antiguedad,
-    calculate_backlog_por_prioridad,
-    calculate_backlog_por_size,
-    calculate_backlog_detalle,
-)
-from backlog_charts import (
-    create_backlog_antiguedad_chart,
-    create_backlog_prioridad_chart,
-    create_backlog_size_chart,
-)
+from periodos import resolve_query_dates, available_years, PERIODOS
+from backlog_metrics import calculate_backlog_detalle
 import streamlit.column_config as stcc
 
 
@@ -76,31 +64,6 @@ def format_percent(value):
 # =========================
 # CONFIGURACIÓN INICIAL
 # =========================
-def resolve_query_dates(periodo, year, custom_range=None, today=None):
-    today = today or datetime.now().date()
-
-    if periodo == "Hoy":
-        return today, today
-    if periodo == "Ultima semana":
-        return today - timedelta(days=6), today
-    if periodo == "Ultimo mes":
-        return today - timedelta(days=29), today
-    if periodo == "Ano":
-        return datetime(year, 1, 1).date(), datetime(year, 12, 31).date()
-    if periodo == "Personalizado" and custom_range and len(custom_range) == 2:
-        start_date, end_date = custom_range
-        if start_date > end_date:
-            raise ValueError("La fecha inicial no puede ser posterior a la fecha final.")
-        return start_date, end_date
-
-    raise ValueError(f"Periodo no soportado: {periodo}")
-
-
-def available_years(today=None):
-    today = today or datetime.now().date()
-    return list(range(today.year, today.year - 11, -1))
-
-
 def apply_resolution_hour_overrides(df, overrides):
     result = df.copy()
     if not overrides or "ticket_id" not in result.columns:
@@ -140,7 +103,7 @@ if "jira_backlog_df" not in st.session_state:
 
 periodo = st.sidebar.selectbox(
     "Periodo",
-    ["Hoy", "Ultima semana", "Ultimo mes", "Ano", "Personalizado"],
+    PERIODOS,
 )
 selected_year = datetime.now().year
 if periodo == "Ano":
@@ -172,8 +135,6 @@ if st.sidebar.button("Consultar Jira", type="primary", width="stretch"):
         jira_config = leer_config_jira()
         st.session_state["jira_backlog_df"] = load_and_validate_jira_data(
             max_results=None,
-            start_date=query_start_date,
-            end_date=query_end_date,
             jql=jira_config["BACKLOG_JQL"],
         )
         periodo_label = f"{query_start_date.strftime('%d/%m/%Y')} - {query_end_date.strftime('%d/%m/%Y')}"
@@ -189,7 +150,7 @@ st.sidebar.caption("Los datos se consultan directamente desde Jira.")
 if st.session_state["jira_df"] is None:
     render_hero_header(
         title="Dashboard Web” Equipo de Soporte",
-        description="Seguimiento de tareas, cumplimiento de SLA y rendimiento del equipo: Leslie Jara Â· Carmen Yepes Â· Jorge Gallego.",
+        description="Seguimiento de tareas, cumplimiento de SLA y rendimiento del equipo: Leslie Jara · Carmen Yepes · Jorge Gallego.",
         timestamp=datetime.now().strftime(config.DATE_FORMAT),
     )
     st.info("Elige el periodo en la barra lateral para consultar Jira.")
@@ -359,43 +320,6 @@ section_title(
     "Cuanto más tiempo lleven aquí sin iniciarse, mayor el riesgo de incumplir el SLA.",
 )
 
-backlog_kpis = calculate_backlog_kpis(backlog_df)
-
-kpi_grid(
-    [
-        ("Total en backlog", str(backlog_kpis["total"]), "Tareas sin iniciar en todo Jira", "warning"),
-    ]
-)
-
-# Tabla resumen por antigüedad, prioridad y size
-antiguedad_df = calculate_backlog_por_antiguedad(backlog_df)
-prioridad_backlog_df = calculate_backlog_por_prioridad(backlog_df)
-size_backlog_df = calculate_backlog_por_size(backlog_df)
-
-if not antiguedad_df.empty:
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.caption("⏱ Por antigüedad — tiempo que llevan sin iniciarse")
-        st.dataframe(antiguedad_df, width="stretch", hide_index=True,
-            column_config={
-                "antigüedad": "Tramo",
-                "tickets": stcc.NumberColumn("Nº tareas", format="%d"),
-            })
-    with col2:
-        st.caption("🔺 Por prioridad — urgencia de las tareas pendientes")
-        st.dataframe(prioridad_backlog_df, width="stretch", hide_index=True,
-            column_config={
-                "prioridad": "Prioridad",
-                "tickets": stcc.NumberColumn("Nº tareas", format="%d"),
-            })
-    with col3:
-        st.caption("📦 Por tamaño (size) — estimación de esfuerzo")
-        st.dataframe(size_backlog_df, width="stretch", hide_index=True,
-            column_config={
-                "size": "Tamaño",
-                "tickets": stcc.NumberColumn("Nº tareas", format="%d"),
-            })
-
 backlog_detalle = calculate_backlog_detalle(backlog_df)
 
 if not backlog_detalle.empty:
@@ -546,124 +470,4 @@ else:
     empty_state("No se detectaron tickets con señales de reapertura en los filtros actuales.")
 
 
-# =========================
-# CLIENTES — RESUMEN
-# =========================
-section_title(
-    "Tickets por cliente",
-    "Conteo exacto de bugs Jira únicos, con el nombre comercial separado del dominio.",
-)
-clientes_resumen = calculate_top_clients(filtered)
-if not clientes_resumen.empty:
-    chart_col, table_col = st.columns([1, 1.35], gap="large")
-    with chart_col:
-        render_chart_wrapper(create_top_clients_chart(clientes_resumen.head(20)))
-    with table_col:
-        st.dataframe(
-            clientes_resumen,
-            width="stretch",
-            hide_index=True,
-            column_config={
-                "cliente": stcc.TextColumn("Cliente", width="medium"),
-                "dominios": stcc.TextColumn("Domain / URL", width="large"),
-                "tickets": stcc.NumberColumn("Tickets Bug", format="%d"),
-                "tickets_sin_tiempo": stcc.NumberColumn("Sin tiempo", format="%d"),
-                "sla": stcc.NumberColumn("SLA global", format="%.1f%%"),
-                "tiempo_horas": stcc.NumberColumn("Tiempo medio", format="%.1f h"),
-            },
-        )
-else:
-    empty_state("No hay clientes para los filtros actuales.")
-
-
-# =========================
-# CLIENTES — DETALLE POR CLIENTE
-# =========================
-section_title(
-    "🔍 Detalle de tareas por cliente",
-    "Selecciona un cliente para ver todas sus tareas individuales con su tiempo de resolución y cumplimiento de SLA.",
-)
-
-clientes_disponibles = sorted(filtered["cliente"].dropna().unique().tolist())
-
-cliente_seleccionado = st.selectbox(
-    "Selecciona un cliente para ver su detalle",
-    options=[""] + clientes_disponibles,
-    index=0,
-    format_func=lambda x: "— Elige un cliente —" if x == "" else x,
-)
-
-if cliente_seleccionado:
-    detalle_df = calculate_client_ticket_detail(filtered, cliente_seleccionado)
-
-    with st.expander("Corregir horas de resolución", expanded=False):
-        st.caption("Los tickets abiertos o sin resolutiondate aparecen sin tiempo. La corrección se guarda solo en esta sesión.")
-        can_edit_hours = st.checkbox("Tengo permiso para corregir este ticket", key="can_edit_hours")
-        ticket_options = detalle_df["ticket_id"].dropna().astype(str).tolist()
-        if can_edit_hours and ticket_options:
-            ticket_to_edit = st.selectbox("Ticket", ticket_options, key="ticket_to_edit")
-            current_hours = detalle_df.loc[
-                detalle_df["ticket_id"].astype(str).eq(ticket_to_edit), "horas_resolucion"
-            ].iloc[0]
-            corrected_hours = st.number_input(
-                "Horas correctas",
-                min_value=0.0,
-                value=float(current_hours) if pd.notna(current_hours) else 0.0,
-                step=0.25,
-                key="corrected_hours",
-            )
-            if st.button("Guardar corrección", key="save_hours_correction", width="stretch"):
-                st.session_state["resolution_hour_overrides"][ticket_to_edit] = corrected_hours
-                st.rerun()
-
-    total = len(detalle_df)
-    if "resuelto" in detalle_df.columns:
-        resueltos = int(detalle_df["resuelto"].sum())
-    elif "estado" in detalle_df.columns:
-        resueltos = int(detalle_df["estado"].astype(str).str.lower().eq("finalizada").sum())
-    else:
-        resueltos = 0
-
-    average_hours = detalle_df["horas_resolucion"].mean() if "horas_resolucion" in detalle_df.columns else pd.NA
-    average_hours_label = f"{average_hours:.1f} h" if pd.notna(average_hours) else "Sin datos"
-
-    kpi_grid(
-        [
-            ("Tareas", str(total), f"Total de {cliente_seleccionado}", ""),
-            ("Resueltas", str(resueltos), "En estado Finalizada", "success"),
-            ("Tiempo medio", average_hours_label, "Horas desde creación hasta cierre", ""),
-        ]
-    )
-
-    if not detalle_df.empty:
-        st.caption("Tareas ordenadas de más reciente a más antigua.")
-        def highlight_overdue_hours(row):
-            try:
-                is_over_limit = float(row.get("horas_resolucion", 0)) > 10
-            except (TypeError, ValueError):
-                is_over_limit = False
-            return ["background-color: rgba(255, 107, 107, 0.28); color: #fff" if is_over_limit else "" for _ in row]
-
-        st.dataframe(
-            detalle_df.style.apply(highlight_overdue_hours, axis=1),
-            width="stretch",
-            hide_index=True,
-            column_config={
-                "ticket_id": "Ticket",
-                "cliente_nombre": "Cliente",
-                "cliente_domain": "Domain",
-                "cliente_url": stcc.LinkColumn("URL", display_text="Abrir URL"),
-                "resumen": stcc.TextColumn("Descripción", width="large"),
-                "tipo": "Tipo",
-                "estado": "Estado",
-                "prioridad": "Prioridad",
-                "size": "Tamaño",
-                "asignado_a": "Técnico",
-                "fecha_creacion": stcc.DatetimeColumn("Creado", format="DD/MM/YYYY"),
-                "fecha_resolucion": stcc.DatetimeColumn("Resuelto", format="DD/MM/YYYY"),
-                "horas_resolucion": stcc.NumberColumn("Horas resolución", format="%.1f h"),
-                # SLA columns removed per request
-            },
-        )
-    else:
-        empty_state(f"No hay tareas para {cliente_seleccionado}.")
+st.info("El detalle y ranking de tickets por cliente se movio a la pagina **Clientes** del menu lateral.")

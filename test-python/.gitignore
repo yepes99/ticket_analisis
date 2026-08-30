@@ -37,6 +37,11 @@ dist/
 .streamlit/secrets.toml
 
 # =========================
+# DATOS LOCALES (limites de horas por cliente)
+# =========================
+data/
+
+# =========================
 # IDEs
 # =========================
 .vscode/
