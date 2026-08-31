@@ -1,20 +1,37 @@
 """
 Autenticacion de la aplicacion.
 
-Hay dos roles:
-- admin: acceso completo (Dashboard + Clientes).
-- clientes: acceso solo a la pagina de Clientes, con contrasena propia.
+Roles:
+- admin (Web Admin): acceso completo, Dashboard + Clientes, unico que puede
+  corregir horas o configurar limites.
+- soporte, cs, lector: acceso solo a la pagina de Clientes, en modo consulta.
 """
 
 import streamlit as st
 from ui_components import render_login_form
 
 
+ROLE_CREDENTIALS = {
+    "admin": ("APP_USER", "APP_PASSWORD"),
+    "soporte": ("SOPORTE_USER", "SOPORTE_PASSWORD"),
+    "cs": ("CS_USER", "CS_PASSWORD"),
+    "lector": ("LECTOR_USER", "LECTOR_PASSWORD"),
+}
+
+ROLE_LABELS = {
+    "admin": "Web Admin",
+    "soporte": "Soporte",
+    "cs": "CS",
+    "lector": "Lector",
+}
+
+CLIENTES_ROLES = {"admin", "soporte", "cs", "lector"}
+
+
 def _resolve_role(username, password):
-    if username == st.secrets.get("APP_USER") and password == st.secrets.get("APP_PASSWORD"):
-        return "admin"
-    if username == st.secrets.get("CLIENTES_USER") and password == st.secrets.get("CLIENTES_PASSWORD"):
-        return "clientes"
+    for role, (user_key, password_key) in ROLE_CREDENTIALS.items():
+        if username == st.secrets.get(user_key) and password == st.secrets.get(password_key):
+            return role
     return None
 
 
@@ -37,19 +54,38 @@ def _login(allowed_roles):
         st.rerun()
 
 
+DASHBOARD_ROLES = {"admin", "soporte"}
+
+
 def check_authentication():
     """
-    Acceso al dashboard principal. Solo administradores.
+    Acceso al dashboard principal. Web Admin y Soporte (gestion de tickets).
     """
-    if st.session_state.get("role") != "admin":
-        _login(allowed_roles={"admin"})
+    if st.session_state.get("role") not in DASHBOARD_ROLES:
+        _login(allowed_roles=DASHBOARD_ROLES)
         st.stop()
 
 
 def check_clientes_authentication():
     """
-    Acceso a la pagina de clientes. Administradores o usuarios de clientes.
+    Acceso a la pagina de clientes. Web Admin, Soporte, CS o Lector.
     """
-    if st.session_state.get("role") not in {"admin", "clientes"}:
-        _login(allowed_roles={"admin", "clientes"})
+    if st.session_state.get("role") not in CLIENTES_ROLES:
+        _login(allowed_roles=CLIENTES_ROLES)
         st.stop()
+
+
+def render_logout_button():
+    """
+    Muestra en la barra lateral el usuario conectado y un boton para cerrar sesion.
+    """
+    role = st.session_state.get("role")
+    if not role:
+        return
+
+    username = st.session_state.get("username") or role
+    st.sidebar.caption(f"Sesion: {username} ({ROLE_LABELS.get(role, role)})")
+    if st.sidebar.button("Cerrar sesion", key="logout_button", width="stretch"):
+        st.session_state.pop("role", None)
+        st.session_state.pop("username", None)
+        st.rerun()

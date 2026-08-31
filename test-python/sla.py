@@ -53,8 +53,40 @@ def completar_metricas_resolucion(df):
     df = df.copy()
 
     fecha_creacion = pd.to_datetime(df["fecha_creacion"], errors="coerce")
-    fecha_resolucion = pd.to_datetime(df["fecha_resolucion"], errors="coerce")
+    fecha_resolucion_bruta = pd.to_datetime(df["fecha_resolucion"], errors="coerce")
     ahora = pd.Timestamp.now()
+
+    estado_normalizado = df["estado"].astype("string").fillna("").str.strip().str.lower()
+    resuelto_por_nombre = estado_normalizado.isin(ESTADOS_RESUELTOS)
+
+    if "categoria_estado" in df.columns:
+        categoria_estado = df["categoria_estado"]
+        # La statusCategory de Jira es la fuente fiable: a diferencia de
+        # resolutiondate, se actualiza al reabrir un ticket (resolutiondate
+        # se queda con la fecha antigua en muchos workflows de Jira).
+        resuelto_bool = pd.Series(
+            np.where(
+                categoria_estado.notna(),
+                categoria_estado.eq("done"),
+                fecha_resolucion_bruta.notna() | resuelto_por_nombre,
+            ),
+            index=df.index,
+        ).astype(bool)
+    else:
+        resuelto_bool = fecha_resolucion_bruta.notna() | resuelto_por_nombre
+
+    df["resuelto"] = resuelto_bool.astype(int)
+
+    # Ticket con fecha de resolucion antigua pero que ya no esta resuelto:
+    # senal fiable de que se reabrio (mas fiable que buscar "reabierto" en
+    # el texto, que solo detecta reaperturas mencionadas a mano).
+    df["reabierto_detectado"] = (fecha_resolucion_bruta.notna() & ~resuelto_bool).astype(int)
+
+    # fecha_resolucion efectiva: solo cuenta si el ticket esta realmente
+    # resuelto ahora mismo. Evita fechas de resolucion "fantasma" en
+    # tickets reabiertos (Jira no siempre limpia resolutiondate al reabrir).
+    fecha_resolucion = fecha_resolucion_bruta.where(resuelto_bool)
+    df["fecha_resolucion"] = fecha_resolucion
 
     df["horas_resolucion"] = (
         (fecha_resolucion - fecha_creacion).dt.total_seconds() / 3600
@@ -65,9 +97,6 @@ def completar_metricas_resolucion(df):
         (fecha_resolucion - fecha_creacion).dt.total_seconds() / 86400,
         np.nan,
     )
-
-    estado_normalizado = df["estado"].astype("string").fillna("").str.strip().str.lower()
-    df["resuelto"] = (fecha_resolucion.notna() | estado_normalizado.isin(ESTADOS_RESUELTOS)).astype(int)
 
     fecha_fin = fecha_resolucion.where(fecha_resolucion.notna(), ahora)
     df["horas_transcurridas"] = (
@@ -171,9 +200,26 @@ def completar_sla_size(df):
     return df
 
 
+def completar_presupuesto(df):
+    """
+    Compara las horas presupuestadas (campo Budget de Jira) con las horas
+    consumidas (tiempo transcurrido desde creacion, en curso o hasta resolucion).
+    """
+    df = df.copy()
+
+    if "presupuesto" not in df.columns:
+        df["presupuesto"] = np.nan
+    df["presupuesto"] = pd.to_numeric(df["presupuesto"], errors="coerce")
+
+    df["diferencia_horas"] = df["horas_transcurridas"] - df["presupuesto"]
+
+    return df
+
+
 def completar_sla(df):
     df = completar_metricas_resolucion(df)
     df = completar_sla_prioridad(df)
     df = completar_sla_size(df)
     df["sla_global_cumple"] = calcular_sla_global(df["sla_prioridad_cumple"], df["sla_size_cumple"])
+    df = completar_presupuesto(df)
     return df

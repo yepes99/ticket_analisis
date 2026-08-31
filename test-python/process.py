@@ -54,6 +54,19 @@ JIRA_FIELD_ALIASES = {
         "Cliente / Empresa",
         "Campo personalizado (Cliente / Empresa)",
     ],
+    "presupuesto": [
+        "Budget",
+        "Campo personalizado (Budget)",
+    ],
+    "es_wordpress": [
+        "¿Es WordPress?",
+        "Es WordPress",
+        "WordPress",
+    ],
+    "plan_servicio": [
+        "Plan Web",
+        "Plan",
+    ],
 }
 
 JIRA_COLUMNS = [
@@ -78,6 +91,9 @@ JIRA_COLUMNS = [
     "cliente_dominio",
     "cliente_empresa",
     "size",
+    "presupuesto",
+    "es_wordpress",
+    "plan_servicio",
 ]
 
 SPANISH_MONTHS = {
@@ -289,63 +305,65 @@ def componer_jql(
     """
     Añade filtros de fecha al JQL existente.
 
-    Ejemplo:
+    Con inicio y fin (p.ej. "Ultima semana"), el periodo se interpreta como
+    "actividad en el periodo": incluye un ticket si se creo O se actualizo
+    dentro del rango, aunque se creara antes. Si no fuera asi, un tecnico
+    que trabaja sobre tickets antiguos (los actualiza/resuelve pero no los
+    crea) desaparece de cualquier periodo corto aunque este trabajando
+    activamente en el.
+
+    Ejemplo, con start_date="2026-07-28" y end_date="2026-08-28":
 
     project = WP AND type = Bug
 
     se convierte en:
 
-    (project = WP AND type = Bug)
-    AND created >= "2026-07-28"
-    AND created < "2026-08-28"
+    (project = WP AND type = Bug) AND (
+        (created >= "2026-07-28" AND created < "2026-08-29")
+        OR (updated >= "2026-07-28" AND updated < "2026-08-29")
+    )
+
+    Si solo se indica end_date (sin start_date, p.ej. "Todo el historico",
+    sin limite inferior), se filtra solo por fecha de creacion.
     """
 
-    filtros_fecha = []
+    start_value = formatear_fecha_jql(start_date)
+    end_value = formatear_fecha_jql(end_date)
 
-    start_value = formatear_fecha_jql(
-        start_date
-    )
-
-    end_value = formatear_fecha_jql(
-        end_date
-    )
-
-    if start_value:
-        filtros_fecha.append(
-            f'created >= "{start_value}"'
-        )
-
-    if end_value:
-        end_exclusive = (
-            pd.Timestamp(end_value)
-            + pd.Timedelta(days=1)
-        ).strftime("%Y-%m-%d")
-
-        filtros_fecha.append(
-            f'created < "{end_exclusive}"'
-        )
-
-    if not filtros_fecha:
+    if not start_value and not end_value:
         return base_jql
 
+    end_exclusive = None
+    if end_value:
+        end_exclusive = (
+            pd.Timestamp(end_value) + pd.Timedelta(days=1)
+        ).strftime("%Y-%m-%d")
+
+    def rango(campo):
+        partes = []
+        if start_value:
+            partes.append(f'{campo} >= "{start_value}"')
+        if end_exclusive:
+            partes.append(f'{campo} < "{end_exclusive}"')
+        return " AND ".join(partes)
+
+    if start_value:
+        filtro_fecha = f"({rango('created')}) OR ({rango('updated')})"
+    else:
+        filtro_fecha = rango("created")
+
     order_clause = ""
-
     jql_body = base_jql.strip()
-
     order_marker = " order by "
-
-    marker_pos = jql_body.lower().find(
-        order_marker
-    )
+    marker_pos = jql_body.lower().find(order_marker)
 
     if marker_pos >= 0:
         order_clause = jql_body[marker_pos:]
-
         jql_body = jql_body[:marker_pos].strip()
 
     return (
         f"({jql_body}) AND "
-        f"{' AND '.join(filtros_fecha)}"
+        f"({filtro_fecha})"
         f"{order_clause}"
     )
 
@@ -481,6 +499,23 @@ def consultar_jira_paginas(
     }
 
 
+def parsear_fecha_jira(series):
+    """
+    Convierte fechas de Jira (ISO 8601 con offset, p.ej. "+02:00") a
+    datetime naive en hora local de Madrid.
+
+    Jira devuelve cada fecha con el offset vigente en ese momento (CEST
+    +02:00 en verano, CET +01:00 en invierno). Si el rango de tickets
+    mezcla ambos offsets, pd.to_datetime sin utc=True falla con
+    "Mixed timezones detected" (pandas >= 2). Se normaliza a UTC primero
+    y se convierte a Europe/Madrid despues, para que el resultado siga
+    siendo comparable con pd.Timestamp.now() (hora local, naive) en el
+    resto del calculo de SLA/horas.
+    """
+    parsed = pd.to_datetime(series, errors="coerce", utc=True)
+    return parsed.dt.tz_convert("Europe/Madrid").dt.tz_localize(None)
+
+
 def transformar_payload_jira(payload):
     issues = payload.get(
         "issues",
@@ -525,7 +560,9 @@ def transformar_payload_jira(payload):
                     "name",
                 ),
 
-                "categoria_estado": None,
+                "categoria_estado": extraer_categoria_estado(
+                    fields.get("status")
+                ),
 
                 "prioridad": extraer_propiedad_jira(
                     fields.get("priority"),
@@ -591,6 +628,21 @@ def transformar_payload_jira(payload):
                     fields,
                     field_map.get("size"),
                 ),
+
+                "presupuesto": extraer_valor_campo_jira(
+                    fields,
+                    field_map.get("presupuesto"),
+                ),
+
+                "es_wordpress": extraer_valor_campo_jira(
+                    fields,
+                    field_map.get("es_wordpress"),
+                ),
+
+                "plan_servicio": extraer_valor_campo_jira(
+                    fields,
+                    field_map.get("plan_servicio"),
+                ),
             }
         )
 
@@ -607,18 +659,12 @@ def transformar_payload_jira(payload):
         keep="first",
     ).reset_index(drop=True)
 
-    df["fecha_creacion"] = pd.to_datetime(
-        df["fecha_creacion"],
-        errors="coerce",
-    )
+    df["fecha_creacion"] = parsear_fecha_jira(df["fecha_creacion"])
+    df["fecha_actualizacion"] = parsear_fecha_jira(df["fecha_actualizacion"])
+    df["fecha_resolucion"] = parsear_fecha_jira(df["fecha_resolucion"])
 
-    df["fecha_actualizacion"] = pd.to_datetime(
-        df["fecha_actualizacion"],
-        errors="coerce",
-    )
-
-    df["fecha_resolucion"] = pd.to_datetime(
-        df["fecha_resolucion"],
+    df["presupuesto"] = pd.to_numeric(
+        df["presupuesto"],
         errors="coerce",
     )
 
@@ -631,6 +677,24 @@ def extraer_propiedad_jira(
 ):
     if isinstance(value, dict):
         return value.get(key)
+
+    return None
+
+
+def extraer_categoria_estado(status_value):
+    """
+    Devuelve la statusCategory de Jira ("new", "indeterminate" o "done").
+
+    Es la senal fiable de si un ticket esta realmente resuelto: a
+    diferencia de resolutiondate, Jira la actualiza al reabrir un ticket
+    (resolutiondate se queda con la fecha antigua en muchos workflows).
+    """
+    if not isinstance(status_value, dict):
+        return None
+
+    category = status_value.get("statusCategory")
+    if isinstance(category, dict):
+        return category.get("key")
 
     return None
 

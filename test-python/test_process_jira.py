@@ -13,11 +13,22 @@ class JiraQueryTest(unittest.TestCase):
 
         self.assertEqual(
             jql,
-            '(project = WEB) AND created >= "2026-08-21" AND created < "2026-08-28" ORDER BY created DESC',
+            '(project = WEB) AND '
+            '((created >= "2026-08-21" AND created < "2026-08-28") '
+            'OR (updated >= "2026-08-21" AND updated < "2026-08-28")) '
+            'ORDER BY created DESC',
         )
 
     def test_keeps_base_jql_without_dates(self):
         self.assertEqual(componer_jql("project = WEB"), "project = WEB")
+
+    def test_only_end_date_filters_by_created(self):
+        jql = componer_jql("project = WEB", end_date="2026-08-27")
+
+        self.assertEqual(
+            jql,
+            '(project = WEB) AND (created < "2026-08-28")',
+        )
 
 
 if __name__ == "__main__":

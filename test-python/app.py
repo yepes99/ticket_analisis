@@ -5,12 +5,11 @@ Dashboard Jira Pro - Aplicación principal.
 from datetime import datetime, timedelta
 from io import BytesIO
 import math
-import pandas as pd
 import streamlit as st
 
 import config
 from styles import apply_styles
-from auth import check_authentication
+from auth import check_authentication, render_logout_button
 from process import leer_config_jira
 from data import (
     apply_filters,
@@ -26,6 +25,7 @@ from ui_components import (
     render_chart_wrapper,
 )
 from metrics import (
+    apply_resolution_hour_overrides,
     calculate_sla_kpis,
     calculate_sla_size_comparison,
     calculate_technician_ranking,
@@ -36,6 +36,8 @@ from metrics import (
     calculate_priority_summary,
     calculate_reopened_tickets,
 )
+import solicitudes
+from clientes_ui import render_detalle_cliente, render_ranking_clientes, render_solicitudes_pendientes
 from charts import (
     create_sla_comparison_chart,
     create_status_bar_chart,
@@ -61,23 +63,6 @@ def format_percent(value):
 # (config.TECNICOS_PERMITIDOS)
 
 
-# =========================
-# CONFIGURACIÓN INICIAL
-# =========================
-def apply_resolution_hour_overrides(df, overrides):
-    result = df.copy()
-    if not overrides or "ticket_id" not in result.columns:
-        return result
-
-    result["horas_resolucion"] = pd.to_numeric(result["horas_resolucion"], errors="coerce")
-    result["dias_resolucion"] = result["horas_resolucion"] / 24
-    for ticket_id, hours in overrides.items():
-        mask = result["ticket_id"].eq(ticket_id)
-        result.loc[mask, "horas_resolucion"] = float(hours)
-        result.loc[mask, "dias_resolucion"] = float(hours) / 24
-    return result
-
-
 st.set_page_config(**config.PAGE_CONFIG)
 apply_styles()
 
@@ -86,6 +71,19 @@ apply_styles()
 # AUTENTICACIÓN
 # =========================
 check_authentication()
+render_logout_button()
+
+role = st.session_state.get("role")
+pendientes_count = solicitudes.contar_pendientes() if role == "admin" else 0
+if pendientes_count:
+    st.sidebar.warning(f"🔔 {pendientes_count} solicitud(es) pendiente(s) de aprobar, mas abajo.")
+
+
+# =========================
+# SOLICITUDES PENDIENTES (solo Web Admin)
+# =========================
+if pendientes_count:
+    render_solicitudes_pendientes()
 
 
 # =========================
@@ -137,7 +135,8 @@ if st.sidebar.button("Consultar Jira", type="primary", width="stretch"):
             max_results=None,
             jql=jira_config["BACKLOG_JQL"],
         )
-        periodo_label = f"{query_start_date.strftime('%d/%m/%Y')} - {query_end_date.strftime('%d/%m/%Y')}"
+        inicio_label = query_start_date.strftime("%d/%m/%Y") if query_start_date else "el origen"
+        periodo_label = f"{inicio_label} - {query_end_date.strftime('%d/%m/%Y')}"
         st.session_state["jira_source"] = f"Jira ({periodo_label})"
 
 st.sidebar.markdown("---")
@@ -160,17 +159,16 @@ df = st.session_state["jira_df"]
 source = st.session_state.get("jira_source") or "Jira"
 st.sidebar.success(f"{len(df)} tickets cargados desde {source}.")
 
-clientes_filter, asignadores_filter, sizes_filter = render_filters(df)
+clientes_filter, asignadores_filter, sizes_filter, estados_filter = render_filters(df)
 
 filtered = apply_filters(
     df,
     clientes=clientes_filter,
     asignadores=asignadores_filter,
     sizes=sizes_filter,
+    estados=estados_filter,
 )
-if "resolution_hour_overrides" not in st.session_state:
-    st.session_state["resolution_hour_overrides"] = {}
-filtered = apply_resolution_hour_overrides(filtered, st.session_state["resolution_hour_overrides"])
+filtered = apply_resolution_hour_overrides(filtered, solicitudes.obtener_overrides_horas_aprobados())
 
 backlog_df = apply_filters(
     st.session_state["jira_backlog_df"] if st.session_state["jira_backlog_df"] is not None else df.iloc[0:0].copy(),
@@ -470,4 +468,5 @@ else:
     empty_state("No se detectaron tickets con señales de reapertura en los filtros actuales.")
 
 
-st.info("El detalle y ranking de tickets por cliente se movio a la pagina **Clientes** del menu lateral.")
+render_ranking_clientes(filtered)
+render_detalle_cliente(filtered, role, key_prefix="dash_")

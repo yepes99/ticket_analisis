@@ -5,7 +5,7 @@ Generación de gráficos y visualizaciones.
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from config import PLOT_TEMPLATE, PLOT_COLORS
+from config import PLOT_TEMPLATE, PLOT_COLORS, TECNICOS_PERMITIDOS
 
 
 def apply_chart_layout(fig, title=None):
@@ -98,10 +98,13 @@ def create_avg_resolution_chart(df):
 
     overall = resolved["dias_resolucion"].mean()
 
-    # Media por técnico si existe la columna
+    # Media por técnico (solo los tecnicos permitidos) si existe la columna
     if "asignado_a" in resolved.columns:
         by_tech = (
-            resolved.groupby("asignado_a")["dias_resolucion"].mean().reset_index()
+            resolved[resolved["asignado_a"].isin(TECNICOS_PERMITIDOS)]
+            .groupby("asignado_a")["dias_resolucion"]
+            .mean()
+            .reset_index()
         )
         # Prepend overall as first row
         rows = [{"asignado_a": "Todos", "dias_resolucion": overall}]

@@ -5,6 +5,8 @@ Cálculo de métricas y KPIs.
 import re
 import pandas as pd
 
+from config import TECNICOS_PERMITIDOS
+
 
 def pct(series):
     if series is None or series.empty:
@@ -56,7 +58,7 @@ def calculate_sla_kpis(df):
         "dias_resolucion_promedio": dias_promedio,
         "total_tickets": total_tickets,
         "total_clientes": df["cliente"].nunique(),
-        "total_tecnicos": df["asignado_a"].nunique(),
+        "total_tecnicos": df.loc[df["asignado_a"].isin(TECNICOS_PERMITIDOS), "asignado_a"].nunique(),
     }
 
 
@@ -109,8 +111,11 @@ def calculate_technician_sla_summary(df, top_n=15):
 
 def calculate_reopened_tickets(df):
     """
-    Identifica tickets con señales de reaparición a partir del resumen, descripción y estado.
-    Esto se basa en texto estructurado del ticket, ya que no hay historial de cambios.
+    Identifica tickets reabiertos combinando dos señales:
+    - Fiable: el ticket tuvo una fecha de resolucion pero su statusCategory
+      de Jira ya no es "done" (ver sla.completar_metricas_resolucion).
+    - Heuristica de texto: menciones de "reabierto"/"reopen" en el resumen
+      o la descripcion, para los casos que la senal anterior no cubra.
     """
     if df.empty:
         return pd.DataFrame(columns=["ticket_id", "resumen", "estado", "cliente", "asignado_a", "fecha_creacion", "fecha_resolucion"])
@@ -126,6 +131,9 @@ def calculate_reopened_tickets(df):
         return any(re.search(term, text) for term in REOPENED_TERMS)
 
     mask = df.apply(is_reopened, axis=1)
+    if "reabierto_detectado" in df.columns:
+        mask = mask | df["reabierto_detectado"].astype(bool)
+
     cols = [c for c in ["ticket_id", "resumen", "tipo", "estado", "cliente", "asignado_a", "fecha_creacion", "fecha_resolucion", "prioridad", "size", "descripcion"] if c in df.columns]
     return df.loc[mask, cols].copy()
 
@@ -153,7 +161,8 @@ def calculate_sla_size_comparison(df):
 
 def calculate_technician_ranking(df):
     ranking = (
-        df.groupby("asignado_a")
+        df[df["asignado_a"].isin(TECNICOS_PERMITIDOS)]
+        .groupby("asignado_a")
         .agg(
             tickets=("ticket_id", "nunique"),
             resueltos=("resuelto", "sum"),
@@ -223,6 +232,10 @@ def apply_resolution_hour_overrides(df, overrides):
         mask = result["ticket_id"].eq(ticket_id)
         result.loc[mask, "horas_resolucion"] = float(hours)
         result.loc[mask, "dias_resolucion"] = float(hours) / 24
+        if "horas_transcurridas" in result.columns:
+            result.loc[mask, "horas_transcurridas"] = float(hours)
+        if "diferencia_horas" in result.columns and "presupuesto" in result.columns:
+            result.loc[mask, "diferencia_horas"] = float(hours) - result.loc[mask, "presupuesto"]
     return result
 
 
@@ -246,6 +259,8 @@ def calculate_client_ticket_detail(df, cliente):
         "fecha_resolucion",
         "dias_resolucion",
         "horas_resolucion",
+        "presupuesto",
+        "diferencia_horas",
         "sla_prioridad_cumple",
         "sla_size_cumple",
         "desviacion_sla",

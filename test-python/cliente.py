@@ -1,3 +1,4 @@
+import re
 from urllib.parse import urlparse
 
 import numpy as np
@@ -12,6 +13,19 @@ CLIENTE_FIELDS = [
 ]
 
 SUBDOMINIOS_RUIDO = ["booking.", "payments.", "reservations.", "holidays."]
+
+# Prefijos de flujo de trabajo, no nombres de cliente. Si el texto antes del
+# separador es uno de estos, se descarta y se cae al dominio (ver mas abajo);
+# de lo contrario tickets como "CLONE - <cliente real>..." o
+# "TEST-<cliente real>..." se agrupaban bajo un cliente falso "CLONE"/"TEST".
+PREFIJOS_NO_CLIENTE = {"clone", "test", "copy", "demo", "draft", "duplicate", "duplicado"}
+
+NOMBRE_CLIENTE_RE = re.compile(r"^\s*([^|]+?)\s*\|")
+NOMBRE_CLIENTE_GUION_RE = re.compile(r"^\s*([^\-–]+?)\s*(?:-|–)")
+PREFIJO_SUCIO_RE = re.compile(
+    r"^(?:" + "|".join(PREFIJOS_NO_CLIENTE) + r")\s*[-–:]\s*",
+    re.IGNORECASE,
+)
 
 
 def normalizar_cliente(valor):
@@ -39,6 +53,31 @@ def normalizar_cliente(valor):
         return valor
 
 
+def extraer_nombre_cliente(resumen):
+    """
+    Extrae el nombre de cliente del resumen del ticket.
+
+    Prioriza el separador "|" (el mas usado y sin ambiguedad); solo si no
+    aparece se recurre al guion, que puede formar parte de un nombre de
+    cliente compuesto (p.ej. "TAL-FANAL VILLAGE"). Descarta prefijos de
+    flujo de trabajo como "CLONE"/"TEST" que no son clientes reales.
+    """
+    if pd.isna(resumen):
+        return np.nan
+
+    texto = str(resumen)
+    match = NOMBRE_CLIENTE_RE.match(texto) or NOMBRE_CLIENTE_GUION_RE.match(texto)
+    if not match:
+        return np.nan
+
+    nombre = match.group(1).strip()
+    nombre = PREFIJO_SUCIO_RE.sub("", nombre).strip()
+    if not nombre or nombre.lower() in PREFIJOS_NO_CLIENTE:
+        return np.nan
+
+    return nombre
+
+
 def completar_cliente(df):
     df = df.copy()
     domain_source = df["cliente_domain"].copy() if "cliente_domain" in df.columns else pd.Series(np.nan, index=df.index)
@@ -54,13 +93,7 @@ def completar_cliente(df):
             df["cliente_domain"] = df["cliente_domain"].fillna(domain_values)
 
     if "resumen" in df.columns:
-        df["cliente_nombre"] = (
-            df["resumen"]
-            .astype("string")
-            .str.extract(r"^\s*([^|\-\u2013]+?)\s*(?:\||\-|\u2013)", expand=False)
-            .str.strip()
-            .replace({"": np.nan})
-        )
+        df["cliente_nombre"] = df["resumen"].apply(extraer_nombre_cliente)
 
     if "descripcion" in df.columns:
         dominio_desc = (

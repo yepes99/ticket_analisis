@@ -68,10 +68,17 @@ def render_filters(df):
             sorted(df["size"].dropna().unique()),
         )
 
-    return clientes, asignadores, sizes
+    estados = []
+    if "resuelto" in df.columns:
+        estados = st.sidebar.multiselect(
+            "Estado",
+            ["Abiertos", "Cerrados"],
+        )
+
+    return clientes, asignadores, sizes, estados
 
 
-def apply_filters(df, clientes=None, asignadores=None, sizes=None):
+def apply_filters(df, clientes=None, asignadores=None, sizes=None, estados=None):
     filtered = df.copy()
 
     if clientes:
@@ -82,5 +89,13 @@ def apply_filters(df, clientes=None, asignadores=None, sizes=None):
 
     if sizes:
         filtered = filtered[filtered["size"].isin(sizes)]
+
+    if estados and "resuelto" in filtered.columns:
+        valores = set()
+        if "Abiertos" in estados:
+            valores.add(0)
+        if "Cerrados" in estados:
+            valores.add(1)
+        filtered = filtered[filtered["resuelto"].isin(valores)]
 
     return filtered
