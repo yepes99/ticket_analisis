@@ -106,28 +106,33 @@ def render_welcome_header():
     )
 
 
-def render_login_form():
+def render_login_form(subtitulo=None):
     """
     Renderiza el formulario de login.
-    
+
+    Args:
+        subtitulo (str, optional): texto que explica que rol puede acceder
+            aqui, para que quede claro en que pantalla se esta entrando.
+
     Returns:
-        tuple: (username, password) si el usuario intenta entrar, (None, None) si no
+        tuple: (username, password, col1, col2)
     """
     _, login_col, _ = st.columns([0.5, 2.2, 0.5])
 
     with login_col:
+        detalle = subtitulo or "Introduce tus credenciales para consultar metricas de tickets, cumplimiento SLA y rendimiento operativo."
         st.markdown(
-            """
+            f"""
             <div class="login-wrap">
                 <div class="eyebrow">Acceso privado</div>
                 <h1>Dashboard Jira Pro</h1>
-                <p>Introduce tus credenciales para consultar metricas de tickets, cumplimiento SLA y rendimiento operativo.</p>
+                <p>{escape(detalle)}</p>
             </div>
             """,
             unsafe_allow_html=True,
         )
-        username = st.text_input("Usuario", placeholder="usuario@empresa.com")
-        password = st.text_input("Contrasena", type="password", placeholder="Contrasena segura")
+        username = st.text_input("Usuario", placeholder="usuario@empresa.com", key="login_username")
+        password = st.text_input("Contrasena", type="password", placeholder="Contrasena segura", key="login_password")
 
         col1, col2 = st.columns(2, gap="medium")
         return username, password, col1, col2

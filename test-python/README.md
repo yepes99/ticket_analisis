@@ -45,3 +45,9 @@ streamlit run app.py
 ```
 
 Al abrir la aplicacion, elige en la barra lateral cuantos tickets quieres consultar y el periodo de creacion. Los datos se consultan directamente desde Jira.
+
+
+cd test-python
+source venv/bin/activate
+streamlit run app.py
+

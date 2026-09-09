@@ -1,12 +1,13 @@
 """
 Pagina de Clientes: ranking, detalle individual y limite de horas contratadas.
 
-Accesible por Web Admin, Soporte, CS y Lector (ver auth.check_clientes_authentication).
-- Web Admin: acceso completo, incluida la aprobacion de solicitudes. Tambien
-  puede ver el ranking y el detalle de clientes directamente en el Dashboard.
+Accesible por Web Admin, Soporte, CS y Lector.
+- Web Admin: acceso completo, incluida la aprobacion de solicitudes (desde
+  el Dashboard). Tambien puede ver el ranking y el detalle de clientes
+  directamente en el Dashboard.
 - Soporte y CS: pueden solicitar correcciones de horas de un ticket y cambios
   en el limite de horas contratadas de un cliente; ambas quedan pendientes
-  hasta que un Web Admin las aprueba o rechaza (pestana "Solicitudes pendientes").
+  hasta que un Web Admin las aprueba o rechaza.
 - CS ademas tiene vista resumida (horas, presupuesto, limite, estado), sin el
   detalle tecnico de cada ticket.
 - Lector: solo consulta, no puede solicitar nada.
@@ -16,9 +17,7 @@ from datetime import datetime, timedelta
 
 import streamlit as st
 
-import config
 import solicitudes
-from styles import apply_styles
 from auth import check_clientes_authentication, render_logout_button
 from data import apply_filters, render_filters, validate_columns
 from metrics import apply_resolution_hour_overrides
@@ -27,9 +26,9 @@ from process import cargar_tickets_jira
 from clientes_ui import render_detalle_cliente, render_ranking_clientes
 
 
-st.set_page_config(**config.PAGE_CONFIG)
-apply_styles()
-
+# =========================
+# AUTENTICACIÓN (defensa en profundidad; el router ya filtro el acceso)
+# =========================
 check_clientes_authentication()
 render_logout_button()
 

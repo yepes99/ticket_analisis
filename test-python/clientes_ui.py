@@ -6,10 +6,14 @@ Soporte) como en la pagina dedicada Clientes (pages/1_Clientes.py, con
 acceso ademas para CS y Lector), para no duplicar la logica en dos sitios.
 """
 
+from datetime import datetime
+from io import BytesIO
+
 import pandas as pd
 import streamlit as st
 import streamlit.column_config as stcc
 
+import bono
 import config
 import limites
 import solicitudes
@@ -52,7 +56,7 @@ def render_horas_banner(cliente, horas_totales, limite_actual):
             background: linear-gradient(135deg, {color}26, {color}0d);
             border: 1px solid {color}55;
             border-left: 6px solid {color};
-            border-radius: 12px;
+            border-radius: 4px;
             padding: 1.1rem 1.4rem;
             margin: 0.9rem 0 1.1rem;
             display: flex;
@@ -69,6 +73,56 @@ def render_horas_banner(cliente, horas_totales, limite_actual):
                     {horas_totales:.1f} h
                 </div>
                 <div style="font-size:0.82rem;color:var(--ink-soft);margin-top:.35rem;">{limite_label}</div>
+            </div>
+            <div style="text-align:right;">
+                <div style="font-size:2rem;line-height:1;">{icono}</div>
+                <div style="font-size:0.85rem;font-weight:700;color:{color};max-width:240px;margin-top:.3rem;">
+                    {mensaje}
+                </div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_bono_banner(cliente, bono_info):
+    """
+    Tarjeta con el saldo del bono de horas: compras detectadas en la
+    descripcion de los tickets (ver bono.py) menos el consumo de los
+    tickets normales. Se pone en rojo cuando esta agotado o a punto de
+    agotarse (ver bono.BONO_ALERTA_HORAS).
+    """
+    comprado = bono_info["comprado"]
+    disponible = bono_info["disponible"]
+    tono, icono, mensaje = bono.bono_tono(comprado, disponible)
+    color = TONE_HEX.get(tono, config.COLOR_VARS["--muted"])
+
+    st.markdown(
+        f"""
+        <div style="
+            background: linear-gradient(135deg, {color}26, {color}0d);
+            border: 1px solid {color}55;
+            border-left: 6px solid {color};
+            border-radius: 4px;
+            padding: 1.1rem 1.4rem;
+            margin: 0 0 1.1rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            flex-wrap: wrap;
+        ">
+            <div>
+                <div style="font-size:0.78rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;">
+                    Bono de horas · {cliente}
+                </div>
+                <div style="font-size:2.3rem;font-weight:850;color:var(--ink);line-height:1;margin-top:.3rem;">
+                    {disponible:.1f} h disponibles
+                </div>
+                <div style="font-size:0.82rem;color:var(--ink-soft);margin-top:.35rem;">
+                    {comprado:.1f} h compradas · {bono_info['consumido']:.1f} h consumidas
+                </div>
             </div>
             <div style="text-align:right;">
                 <div style="font-size:2rem;line-height:1;">{icono}</div>
@@ -156,6 +210,27 @@ def render_detalle_cliente(filtered, role, key_prefix=""):
     # Tarjeta grande y coloreada: lo primero que se ve
     render_horas_banner(cliente_seleccionado, horas_totales, limite_actual)
 
+    bono_info = bono.calcular_bono_cliente(filtered, cliente_seleccionado)
+    render_bono_banner(cliente_seleccionado, bono_info)
+    if not bono_info["compras"].empty:
+        with st.expander(f"🎟️ Compras de bono detectadas ({len(bono_info['compras'])})", expanded=False):
+            st.caption(
+                "Tickets cuya descripcion contiene un texto de compra de bono "
+                "(ej. \"Tipo de tarea: 10h web changes bundle\")."
+            )
+            st.dataframe(
+                bono_info["compras"],
+                width="stretch",
+                hide_index=True,
+                column_config={
+                    "ticket_id": "Ticket",
+                    "fecha_creacion": stcc.DatetimeColumn("Fecha", format="DD/MM/YYYY"),
+                    "bono_horas_compradas": stcc.NumberColumn("Horas compradas", format="%.1f h"),
+                },
+            )
+
+    limite_detalle = "Configurado a mano en 'Gestionar' abajo" if limite_actual is not None else "Configurable en 'Gestionar' abajo"
+
     # KPIs secundarios, sin dramatismo de color
     kpi_grid(
         [
@@ -164,7 +239,7 @@ def render_detalle_cliente(filtered, role, key_prefix=""):
             (
                 "Limite contratado",
                 f"{limite_actual:.1f} h" if limite_actual is not None else "Sin definir",
-                "Configurable en 'Gestionar' abajo",
+                limite_detalle,
                 "",
             ),
         ],
@@ -277,14 +352,18 @@ def render_detalle_cliente(filtered, role, key_prefix=""):
                 "cliente_domain": "Domain",
                 "cliente_url": stcc.LinkColumn("URL", display_text="Abrir URL"),
                 "resumen": stcc.TextColumn("Descripcion", width="large"),
-                "tipo": "Tipo",
+                "tipo": "Tipo de incidencia",
+                "plan_servicio": "Plan",
+                "tipo_producto": "Tipo",
                 "estado": "Estado",
                 "prioridad": "Prioridad",
                 "size": "Tamaño",
                 "asignado_a": "Tecnico",
                 "fecha_creacion": stcc.DatetimeColumn("Creado", format="DD/MM/YYYY"),
                 "fecha_resolucion": stcc.DatetimeColumn("Resuelto", format="DD/MM/YYYY"),
-                "horas_resolucion": stcc.NumberColumn("Horas resolucion", format="%.1f h"),
+                "horas_resolucion": stcc.NumberColumn("Horas resolucion", format="%.1f h", help="Desde creacion hasta Finalizada, sin contar el tiempo en Pending Info."),
+                "horas_pending_info": stcc.NumberColumn("Horas Pending Info", format="%.1f h"),
+                "horas_trabajo_real": stcc.NumberColumn("Horas trabajo real", format="%.1f h", help="Desde que se coge el ticket (sale de Backlog) hasta Finalizada/ahora."),
                 "presupuesto": stcc.NumberColumn("Presupuesto", format="%.1f h"),
                 "diferencia_horas": stcc.NumberColumn("Diferencia", format="%.1f h"),
             },
@@ -373,3 +452,55 @@ def render_solicitudes_cliente(cliente):
             f"{icono} **{etiqueta}** — {objetivo}: {actual_label} → **{solicitud['valor_propuesto']:.1f} h** "
             f"(pedido por {solicitud['solicitado_por']}{detalle_revision})"
         )
+
+
+def render_historico_cambios():
+    """
+    Historico global de TODOS los cambios de horas y limite ya resueltos
+    (aprobados o rechazados), de todos los clientes. Solo para Web Admin.
+    Incluye descarga en Excel para guardar constancia fuera del dashboard.
+    """
+    resueltas = [s for s in solicitudes.listar_solicitudes() if s["estado"] != "pendiente"]
+    if not resueltas:
+        empty_state("Todavia no hay cambios de horas o limite resueltos.")
+        return
+
+    resueltas = sorted(resueltas, key=lambda s: s.get("fecha_revision") or "", reverse=True)
+
+    filas = [
+        {
+            "Fecha solicitud": s["fecha_solicitud"],
+            "Fecha revision": s["fecha_revision"],
+            "Tipo": "Horas" if s["tipo"] == "horas" else "Limite",
+            "Cliente": s["cliente"],
+            "Ticket": s["ticket_id"] or "-",
+            "Antes (h)": s["valor_actual"] if s["valor_actual"] is not None else float("nan"),
+            "Despues (h)": s["valor_propuesto"],
+            "Solicitado por": s["solicitado_por"],
+            "Revisado por": s["revisado_por"],
+            "Estado": "Aprobado" if s["estado"] == "aprobado" else "Rechazado",
+        }
+        for s in resueltas
+    ]
+
+    st.dataframe(
+        filas,
+        width="stretch",
+        hide_index=True,
+        column_config={
+            "Antes (h)": stcc.NumberColumn(format="%.1f h"),
+            "Despues (h)": stcc.NumberColumn(format="%.1f h"),
+        },
+    )
+
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        pd.DataFrame(filas).to_excel(writer, sheet_name="Historico", index=False)
+
+    st.download_button(
+        "⬇️ Descargar histórico en Excel",
+        data=output.getvalue(),
+        file_name=f"historico_horas_limites_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key="descargar_historico_cambios",
+    )
