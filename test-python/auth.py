@@ -66,8 +66,10 @@ def login_gate():
     if role:
         return role
 
+    form_key = st.session_state.get("login_form_key", 0)
     username, password, col1, col2 = render_login_form(
         subtitulo="Introduce tus credenciales para acceder al dashboard de soporte web.",
+        form_key=form_key,
     )
 
     if col1.button("Entrar", width="stretch", key="login_entrar"):
@@ -80,8 +82,9 @@ def login_gate():
             st.rerun()
 
     if col2.button("Limpiar", width="stretch", key="login_limpiar"):
-        st.session_state.pop("login_username", None)
-        st.session_state.pop("login_password", None)
+        st.session_state.pop(f"login_username_{form_key}", None)
+        st.session_state.pop(f"login_password_{form_key}", None)
+        st.session_state["login_form_key"] = form_key + 1
         st.rerun()
 
     return None

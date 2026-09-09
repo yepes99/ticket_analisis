@@ -86,6 +86,24 @@ def calcular_bono_cliente(filtered, cliente):
     }
 
 
+def detectar_bonos_sin_cliente(df):
+    """
+    Compras de bono detectadas que no se han podido atribuir a ningun
+    cliente real (columna 'cliente' == "Sin cliente"). El bono se asocia
+    al cliente exactamente igual que cualquier otro ticket (ver
+    cliente.completar_cliente): por el prefijo "Cliente | ..." del resumen,
+    o si no por el campo Domain/Web. Si el ticket de compra no lleva
+    ninguno de los dos, sus horas quedan huerfanas y no suman al bono de
+    nadie -- esto sirve para detectarlo y poder corregirlo en Jira.
+    """
+    if "bono_horas_compradas" not in df.columns or "cliente" not in df.columns:
+        return df.iloc[0:0]
+
+    huerfanos = df["bono_horas_compradas"].notna() & df["cliente"].eq("Sin cliente")
+    cols = [c for c in ["ticket_id", "resumen", "fecha_creacion", "bono_horas_compradas"] if c in df.columns]
+    return df.loc[huerfanos, cols]
+
+
 def bono_tono(comprado, disponible):
     """Tono, icono y mensaje segun el estado del bono de un cliente."""
     if comprado <= 0:

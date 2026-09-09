@@ -22,14 +22,6 @@ from metrics import calculate_client_ticket_detail, calculate_top_clients
 from ui_components import empty_state, kpi_grid, render_chart_wrapper, section_title
 
 
-TONE_HEX = {
-    "success": config.COLOR_VARS["--success"],
-    "warning": config.COLOR_VARS["--warning"],
-    "danger": config.COLOR_VARS["--danger"],
-}
-TONE_ICON = {"success": "🟢", "warning": "🟠", "danger": "🔴"}
-
-
 def horas_tono(horas_totales, limite_actual):
     """Tono (success/warning/danger) y mensaje segun el exceso sobre el limite."""
     if limite_actual is None:
@@ -43,97 +35,25 @@ def horas_tono(horas_totales, limite_actual):
     return "success", "Dentro del limite contratado"
 
 
-def render_horas_banner(cliente, horas_totales, limite_actual):
-    """Tarjeta grande y coloreada con las horas consumidas frente al limite."""
-    tono, mensaje = horas_tono(horas_totales, limite_actual)
-    color = TONE_HEX.get(tono, config.COLOR_VARS["--muted"])
-    icono = TONE_ICON.get(tono, "⚪")
-    limite_label = f"{limite_actual:.1f} h contratadas" if limite_actual is not None else "sin limite definido"
-
-    st.markdown(
-        f"""
-        <div style="
-            background: linear-gradient(135deg, {color}26, {color}0d);
-            border: 1px solid {color}55;
-            border-left: 6px solid {color};
-            border-radius: 4px;
-            padding: 1.1rem 1.4rem;
-            margin: 0.9rem 0 1.1rem;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 1rem;
-            flex-wrap: wrap;
-        ">
-            <div>
-                <div style="font-size:0.78rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;">
-                    Horas consumidas · {cliente}
-                </div>
-                <div style="font-size:2.3rem;font-weight:850;color:var(--ink);line-height:1;margin-top:.3rem;">
-                    {horas_totales:.1f} h
-                </div>
-                <div style="font-size:0.82rem;color:var(--ink-soft);margin-top:.35rem;">{limite_label}</div>
-            </div>
-            <div style="text-align:right;">
-                <div style="font-size:2rem;line-height:1;">{icono}</div>
-                <div style="font-size:0.85rem;font-weight:700;color:{color};max-width:240px;margin-top:.3rem;">
-                    {mensaje}
-                </div>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+def _kpi_tone(tono):
+    """kpi_grid solo tiene estilo para success/warning/danger; el resto (p.ej. 'neutral') es tarjeta normal."""
+    return tono if tono in {"success", "warning", "danger"} else ""
 
 
-def render_bono_banner(cliente, bono_info):
+def _valor_reciente(serie):
     """
-    Tarjeta con el saldo del bono de horas: compras detectadas en la
-    descripcion de los tickets (ver bono.py) menos el consumo de los
-    tickets normales. Se pone en rojo cuando esta agotado o a punto de
-    agotarse (ver bono.BONO_ALERTA_HORAS).
+    Ultimo valor no vacio de una columna (p.ej. Plan o Tipo), asumiendo que
+    la serie viene ordenada de mas reciente a mas antigua. Si el cliente ha
+    tenido varios valores distintos en el periodo, lo indica en el detalle
+    en vez de ocultarlo.
     """
-    comprado = bono_info["comprado"]
-    disponible = bono_info["disponible"]
-    tono, icono, mensaje = bono.bono_tono(comprado, disponible)
-    color = TONE_HEX.get(tono, config.COLOR_VARS["--muted"])
+    valores = serie.dropna() if serie is not None else pd.Series(dtype="object")
+    if valores.empty:
+        return "Sin dato", "Aun no rellenado en Jira"
 
-    st.markdown(
-        f"""
-        <div style="
-            background: linear-gradient(135deg, {color}26, {color}0d);
-            border: 1px solid {color}55;
-            border-left: 6px solid {color};
-            border-radius: 4px;
-            padding: 1.1rem 1.4rem;
-            margin: 0 0 1.1rem;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 1rem;
-            flex-wrap: wrap;
-        ">
-            <div>
-                <div style="font-size:0.78rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;">
-                    Bono de horas · {cliente}
-                </div>
-                <div style="font-size:2.3rem;font-weight:850;color:var(--ink);line-height:1;margin-top:.3rem;">
-                    {disponible:.1f} h disponibles
-                </div>
-                <div style="font-size:0.82rem;color:var(--ink-soft);margin-top:.35rem;">
-                    {comprado:.1f} h compradas · {bono_info['consumido']:.1f} h consumidas
-                </div>
-            </div>
-            <div style="text-align:right;">
-                <div style="font-size:2rem;line-height:1;">{icono}</div>
-                <div style="font-size:0.85rem;font-weight:700;color:{color};max-width:240px;margin-top:.3rem;">
-                    {mensaje}
-                </div>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    distintos = valores.unique()
+    detalle = "Valor actual en Jira" if len(distintos) == 1 else f"Ultimo valor · {len(distintos)} valores distintos en el periodo"
+    return str(valores.iloc[0]), detalle
 
 
 def render_ranking_clientes(filtered):
@@ -166,7 +86,9 @@ def render_ranking_clientes(filtered):
 
 def render_detalle_cliente(filtered, role, key_prefix=""):
     """
-    Selector de cliente + banner de horas + KPIs + gestion + tabla de tickets.
+    Selector de cliente + resumen en tarjetas KPI (horas, limite, bono,
+    tareas, Plan, Tipo) + gestion + tabla de tickets. Usa el mismo
+    lenguaje visual (kpi_grid/section_title) que el resto del dashboard.
 
     key_prefix distingue las keys de los widgets cuando esta funcion se
     llama mas de una vez en la misma pagina (Dashboard y Clientes son
@@ -206,12 +128,49 @@ def render_detalle_cliente(filtered, role, key_prefix=""):
 
     horas_totales = pd.to_numeric(detalle_df.get("horas_resolucion"), errors="coerce").sum()
     limite_actual = limites.obtener_limite(cliente_seleccionado)
-
-    # Tarjeta grande y coloreada: lo primero que se ve
-    render_horas_banner(cliente_seleccionado, horas_totales, limite_actual)
-
     bono_info = bono.calcular_bono_cliente(filtered, cliente_seleccionado)
-    render_bono_banner(cliente_seleccionado, bono_info)
+
+    horas_tono_str, horas_mensaje = horas_tono(horas_totales, limite_actual)
+    bono_tono_str, _, bono_mensaje = bono.bono_tono(bono_info["comprado"], bono_info["disponible"])
+    limite_detalle = "Configurado a mano en 'Gestionar' abajo" if limite_actual is not None else "Configurable en 'Gestionar' abajo"
+    plan_valor, plan_detalle = _valor_reciente(detalle_df.get("plan_servicio"))
+    tipo_valor, tipo_detalle = _valor_reciente(detalle_df.get("tipo_producto"))
+
+    section_title(
+        f"📊 Resumen · {cliente_seleccionado}",
+        "Horas consumidas frente al limite contratado y saldo del bono de horas.",
+    )
+
+    # Fila principal: los tres numeros que importan, con color segun su estado.
+    kpi_grid(
+        [
+            ("Horas consumidas", f"{horas_totales:.1f} h", horas_mensaje, _kpi_tone(horas_tono_str)),
+            (
+                "Limite contratado",
+                f"{limite_actual:.1f} h" if limite_actual is not None else "Sin definir",
+                limite_detalle,
+                "",
+            ),
+            (
+                "Bono disponible",
+                f"{bono_info['disponible']:.1f} h" if bono_info["comprado"] > 0 else "Sin bono",
+                bono_mensaje,
+                _kpi_tone(bono_tono_str),
+            ),
+        ],
+        secondary=True,
+    )
+
+    # Fila secundaria: volumen de tareas y los campos Plan/Tipo de Jira.
+    kpi_grid(
+        [
+            ("Tareas", str(total), f"Total de {cliente_seleccionado}", ""),
+            ("Resueltas", str(resueltos), "En estado Finalizada", ""),
+            ("Plan", plan_valor, plan_detalle, ""),
+            ("Tipo", tipo_valor, tipo_detalle, ""),
+        ]
+    )
+
     if not bono_info["compras"].empty:
         with st.expander(f"🎟️ Compras de bono detectadas ({len(bono_info['compras'])})", expanded=False):
             st.caption(
@@ -228,23 +187,6 @@ def render_detalle_cliente(filtered, role, key_prefix=""):
                     "bono_horas_compradas": stcc.NumberColumn("Horas compradas", format="%.1f h"),
                 },
             )
-
-    limite_detalle = "Configurado a mano en 'Gestionar' abajo" if limite_actual is not None else "Configurable en 'Gestionar' abajo"
-
-    # KPIs secundarios, sin dramatismo de color
-    kpi_grid(
-        [
-            ("Tareas", str(total), f"Total de {cliente_seleccionado}", ""),
-            ("Resueltas", str(resueltos), "En estado Finalizada", ""),
-            (
-                "Limite contratado",
-                f"{limite_actual:.1f} h" if limite_actual is not None else "Sin definir",
-                limite_detalle,
-                "",
-            ),
-        ],
-        secondary=True,
-    )
 
     if puede_gestionar:
         with st.expander("⚙️ Gestionar horas y limite", expanded=False):
@@ -317,7 +259,10 @@ def render_detalle_cliente(filtered, role, key_prefix=""):
 
             render_solicitudes_cliente(cliente_seleccionado)
 
-    st.markdown("---")
+    section_title(
+        f"📋 Historial de tareas · {cliente_seleccionado}",
+        "Detalle ticket a ticket, ordenado de mas reciente a mas antigua.",
+    )
 
     if vista_resumida:
         empty_state(
@@ -326,8 +271,8 @@ def render_detalle_cliente(filtered, role, key_prefix=""):
         )
     elif not detalle_df.empty:
         st.caption(
-            "Tareas ordenadas de mas reciente a mas antigua. \"Presupuesto\" es el campo Budget de Jira; "
-            "cuando las horas consumidas de un ticket lo superan en mas de 8h la fila se marca en naranja, y en mas de 10h en rojo."
+            "\"Presupuesto\" es el campo Budget de Jira; cuando las horas consumidas de un ticket lo superan "
+            "en mas de 8h la fila se marca en naranja, y en mas de 10h en rojo."
         )
 
         def highlight_diferencia_horas(row):
@@ -342,8 +287,15 @@ def render_detalle_cliente(filtered, role, key_prefix=""):
                 color = ""
             return [color for _ in row]
 
+        # Solo para mostrar: celdas de texto vacias en vez de <NA>, que el
+        # widget de tabla de Streamlit renderiza como el texto literal "None".
+        tabla_historial = detalle_df.copy()
+        for col in ("plan_servicio", "tipo_producto"):
+            if col in tabla_historial.columns:
+                tabla_historial[col] = tabla_historial[col].fillna("")
+
         st.dataframe(
-            detalle_df.style.apply(highlight_diferencia_horas, axis=1),
+            tabla_historial.style.apply(highlight_diferencia_horas, axis=1),
             width="stretch",
             hide_index=True,
             column_config={

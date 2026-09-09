@@ -38,11 +38,6 @@ if st.session_state.get("role") == "admin":
         st.sidebar.warning(f"🔔 {pendientes_count} solicitud(es) pendiente(s) — apruebalas en el Dashboard.")
 
 
-@st.cache_data(ttl=300, show_spinner="Consultando Jira...")
-def _cargar_datos_clientes(start_date, end_date):
-    return cargar_tickets_jira(start_date=start_date, end_date=end_date)
-
-
 # =========================
 # SIDEBAR - CARGA DE DATOS
 # =========================
@@ -75,7 +70,8 @@ if periodo == "Personalizado":
 query_start_date, query_end_date = resolve_query_dates(periodo, selected_year, custom_range)
 
 if st.sidebar.button("Consultar Jira", type="primary", width="stretch", key="clientes_consultar"):
-    datos = _cargar_datos_clientes(query_start_date, query_end_date)
+    with st.spinner("Consultando Jira..."):
+        datos = cargar_tickets_jira(start_date=query_start_date, end_date=query_end_date)
     is_valid, missing = validate_columns(datos)
     if not is_valid:
         st.sidebar.error(f"Faltan columnas: {missing}")

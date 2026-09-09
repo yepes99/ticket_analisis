@@ -211,25 +211,45 @@ label,
 }
 
 .login-wrap {
-    max-width: 760px;
-    margin: 7vh auto 1.2rem;
+    margin: 9vh auto 0;
     background: linear-gradient(135deg, rgba(18, 29, 42, 0.98), rgba(12, 20, 31, 0.98));
     border: 1px solid var(--line);
     border-radius: 4px;
-    padding: 2.3rem 2.5rem;
+    padding: 2rem 1.8rem 1.6rem;
     box-shadow: var(--shadow);
+    text-align: center;
+}
+
+.login-icon {
+    font-size: 1.7rem;
+    line-height: 1;
+    margin-bottom: 0.6rem;
+}
+
+.login-wrap .eyebrow {
+    display: block;
 }
 
 .login-wrap h1 {
     color: var(--ink);
-    margin: 0 0 0.45rem;
-    font-size: 2rem;
+    margin: 0.3rem 0 0.5rem;
+    font-size: 1.55rem;
 }
 
 .login-wrap p {
     color: var(--ink-soft);
-    margin: 0 0 1.5rem;
+    margin: 0;
     line-height: 1.5;
+    font-size: 0.9rem;
+}
+
+/*
+ * Los inputs y botones (widgets nativos de Streamlit, fuera del div de
+ * arriba) comparten la misma columna estrecha: quedan visualmente unidos
+ * a la tarjeta aunque tecnicamente sean elementos hermanos, no hijos.
+ */
+div[data-testid="stAppViewContainer"] .stTextInput {
+    margin-top: 0.9rem;
 }
 
 .section-title {

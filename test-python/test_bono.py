@@ -2,7 +2,13 @@ import unittest
 
 import pandas as pd
 
-from bono import BONO_ALERTA_HORAS, bono_tono, calcular_bono_cliente, extraer_horas_bono
+from bono import (
+    BONO_ALERTA_HORAS,
+    bono_tono,
+    calcular_bono_cliente,
+    detectar_bonos_sin_cliente,
+    extraer_horas_bono,
+)
 
 
 class ExtraerHorasBonoTest(unittest.TestCase):
@@ -100,6 +106,54 @@ class BonoTonoTest(unittest.TestCase):
     def test_bono_holgado_es_success(self):
         tono, _, _ = bono_tono(10.0, 5.0)
         self.assertEqual(tono, "success")
+
+
+class DetectarBonosSinClienteTest(unittest.TestCase):
+    def test_detecta_compra_sin_cliente_atribuido(self):
+        df = pd.DataFrame(
+            [
+                {
+                    "ticket_id": "WP-1",
+                    "resumen": "Bevalle | 10h web changes bundle",
+                    "fecha_creacion": pd.Timestamp("2026-01-01"),
+                    "bono_horas_compradas": 10.0,
+                    "cliente": "Bevalle",
+                },
+                {
+                    "ticket_id": "WP-2",
+                    "resumen": "10h web changes bundle",
+                    "fecha_creacion": pd.Timestamp("2026-01-02"),
+                    "bono_horas_compradas": 10.0,
+                    "cliente": "Sin cliente",
+                },
+                {
+                    "ticket_id": "WP-3",
+                    "resumen": "Ticket normal, no es bono",
+                    "fecha_creacion": pd.Timestamp("2026-01-03"),
+                    "bono_horas_compradas": None,
+                    "cliente": "Sin cliente",
+                },
+            ]
+        )
+
+        huerfanos = detectar_bonos_sin_cliente(df)
+
+        self.assertEqual(list(huerfanos["ticket_id"]), ["WP-2"])
+
+    def test_sin_huerfanos_devuelve_vacio(self):
+        df = pd.DataFrame(
+            [
+                {
+                    "ticket_id": "WP-1",
+                    "resumen": "Bevalle | 10h web changes bundle",
+                    "fecha_creacion": pd.Timestamp("2026-01-01"),
+                    "bono_horas_compradas": 10.0,
+                    "cliente": "Bevalle",
+                },
+            ]
+        )
+
+        self.assertTrue(detectar_bonos_sin_cliente(df).empty)
 
 
 if __name__ == "__main__":

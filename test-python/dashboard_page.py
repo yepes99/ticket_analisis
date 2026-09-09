@@ -9,6 +9,7 @@ import streamlit as st
 
 import config
 from auth import check_authentication, render_logout_button
+from bono import detectar_bonos_sin_cliente
 from process import leer_config_jira
 from data import (
     apply_filters,
@@ -47,7 +48,6 @@ from charts import (
     create_status_bar_chart,
     create_priority_bar_chart,
     create_avg_resolution_chart,
-    create_technician_sla_chart,
 )
 from periodos import resolve_query_dates, available_years, PERIODOS
 from backlog_metrics import calculate_backlog_detalle
@@ -61,6 +61,26 @@ def format_percent(value):
         return f"{int(round(float(value)))}%"
     except (TypeError, ValueError):
         return "-"
+
+
+def sla_tone(value, objetivo=80, aviso=50):
+    """
+    Semaforo de 3 niveles para un % de cumplimiento SLA: verde >= objetivo,
+    naranja entre aviso y objetivo, rojo por debajo de aviso. Con solo dos
+    colores (verde/rojo) un 60% se veia en rojo igual que un 10%, sin
+    distinguir "cerca del objetivo" de "muy lejos".
+    """
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return ""
+    if math.isnan(value):
+        return ""
+    if value >= objetivo:
+        return "success"
+    if value >= aviso:
+        return "warning"
+    return "danger"
 
 
 # =========================
@@ -190,6 +210,31 @@ if filtered.empty:
 
 
 # =========================
+# BONOS DE HORAS SIN CLIENTE ASIGNADO (solo Web Admin)
+# =========================
+if role == "admin":
+    bonos_sin_cliente = detectar_bonos_sin_cliente(df)
+    if not bonos_sin_cliente.empty:
+        st.warning(
+            f"⚠️ {len(bonos_sin_cliente)} compra(s) de bono de horas no se han podido asociar a ningun cliente "
+            "(el ticket no lleva el prefijo \"Cliente | ...\" en el resumen ni el campo Domain relleno). "
+            "Esas horas no se estan sumando al bono de nadie hasta que se corrija en Jira."
+        )
+        with st.expander("Ver tickets afectados", expanded=False):
+            st.dataframe(
+                bonos_sin_cliente,
+                width="stretch",
+                hide_index=True,
+                column_config={
+                    "ticket_id": "Ticket",
+                    "resumen": stcc.TextColumn("Resumen", width="large"),
+                    "fecha_creacion": stcc.DatetimeColumn("Creado", format="DD/MM/YYYY"),
+                    "bono_horas_compradas": stcc.NumberColumn("Horas compradas", format="%.1f h"),
+                },
+            )
+
+
+# =========================
 # EXPORTAR
 # =========================
 st.sidebar.markdown("## Exportar")
@@ -276,20 +321,20 @@ kpi_grid(
         (
             "SLA prioridad",
             f"{kpis['sla_prioridad']}%",
-            "% tareas resueltas dentro del plazo por prioridad",
-            "success" if kpis['sla_prioridad'] >= 80 else "danger",
+            "% tareas resueltas dentro del plazo por prioridad (verde ≥80%, naranja 50-79%, rojo <50%)",
+            sla_tone(kpis['sla_prioridad']),
         ),
         (
             "SLA size",
             f"{kpis['sla_size']}%",
-            "% tareas resueltas dentro del plazo por tamaño",
-            "success" if kpis['sla_size'] >= 80 else "danger",
+            "% tareas resueltas dentro del plazo por tamaño (verde ≥80%, naranja 50-79%, rojo <50%)",
+            sla_tone(kpis['sla_size']),
         ),
         (
             "SLA global",
             format_percent(kpis['sla_global']),
-            "Cumplimiento combinado — objetivo ≥ 80%",
-            "success" if kpis['sla_global'] >= 80 else "danger",
+            "Cumplimiento combinado (verde ≥80%, naranja 50-79%, rojo <50%)",
+            sla_tone(kpis['sla_global']),
         ),
     ]
 )
@@ -311,33 +356,6 @@ kpi_grid(
     ],
     secondary=True,
 )
-
-
-# =========================
-# ESTADO DE CAMPOS PENDIENTES EN JIRA (solo Web Admin)
-# =========================
-if role == "admin":
-    CAMPOS_PENDIENTES = [
-        ("presupuesto", "Presupuesto (Budget) — horas por ticket"),
-        ("plan_servicio", "Plan"),
-        ("tipo_producto", "Tipo"),
-        ("bono_horas_compradas", "Bono de horas (detectado en descripción)"),
-    ]
-    with st.expander("🔧 Estado de campos pendientes en Jira", expanded=False):
-        st.caption(
-            "Campos ya enganchados en el dashboard pero que en Jira todavia no se rellenan. "
-            "En cuanto empiecen a tener datos, las funciones asociadas se activan solas, sin tocar mas codigo."
-        )
-        filas_estado = [
-            {
-                "Campo": etiqueta,
-                "Tickets con dato": int(df[columna].notna().sum()) if columna in df.columns else 0,
-                "Total cargado": len(df),
-                "Estado": "🟢 En uso" if (columna in df.columns and df[columna].notna().any()) else "⚪ Todavía vacío",
-            }
-            for columna, etiqueta in CAMPOS_PENDIENTES
-        ]
-        st.dataframe(filas_estado, width="stretch", hide_index=True)
 
 
 # =========================
@@ -448,11 +466,6 @@ if not ranking.empty:
     )
 else:
     empty_state("No hay técnicos con datos para los filtros seleccionados.")
-
-tech_sla_df = calculate_technician_sla_summary(filtered)
-if not tech_sla_df.empty:
-    st.caption("Gráfico de cumplimiento SLA por técnico.")
-    render_chart_wrapper(create_technician_sla_chart(tech_sla_df))
 
 
 # =========================

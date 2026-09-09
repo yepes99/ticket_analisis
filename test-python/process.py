@@ -684,6 +684,12 @@ def transformar_payload_jira(payload):
         errors="coerce",
     )
 
+    # dtype "string" en vez de "object": un valor ausente queda como <NA> de
+    # pandas y se muestra como celda vacia en las tablas, en vez del texto
+    # literal "None" que sale con un None de Python suelto en una columna object.
+    df["plan_servicio"] = df["plan_servicio"].astype("string")
+    df["tipo_producto"] = df["tipo_producto"].astype("string")
+
     # No existe un campo dedicado "¿Es WordPress?" en Jira: se deriva del
     # campo real "Plan", cuyos valores WordPress empiezan por "WP" (WP
     # Smart, WP Advanced, WP Custom), a diferencia de los de Frameworks
