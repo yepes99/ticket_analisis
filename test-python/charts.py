@@ -233,8 +233,13 @@ def create_top_clients_chart(clientes_df):
         opacity=0.94,
         hovertemplate="%{y}<br>Tickets: %{x}<extra></extra>",
         text=clientes_df.sort_values("tickets", ascending=True)["tickets"],
-        textposition="inside",
+        # "inside" giraba la etiqueta 90 grados cuando no cabia en barras muy
+        # cortas (clientes con 1 ticket), dejando un simbolo ilegible. Con
+        # "outside" + textangle=0 la etiqueta siempre queda horizontal, justo
+        # despues de la barra, quepa o no dentro.
+        textposition="outside",
         texttemplate="%{text}",
-        insidetextanchor="middle",
+        textangle=0,
+        cliponaxis=False,
     )
     return fig

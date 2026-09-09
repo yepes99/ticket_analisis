@@ -348,6 +348,54 @@ kpi_grid(
     ]
 )
 
+# Cada tarjeta de arriba es clicable: el boton de debajo abre el listado
+# de tickets detras de ese numero, para no tener que ir a buscarlo a mano
+# mas abajo en el dashboard.
+DRILLDOWN_KPIS = {
+    "resueltas": ("✅ Ver resueltas", "Tareas resueltas", filtered.get("resuelto") == 1),
+    "abiertas": ("🟡 Ver abiertas", "Tareas abiertas", filtered.get("resuelto") == 0),
+    "fuera_sla": ("🔴 Ver fuera de SLA", "Tareas fuera de SLA", filtered.get("sla_global_cumple") == 0),
+    "en_riesgo": ("🟠 Ver en riesgo", "Tareas en riesgo de incumplir SLA", filtered.get("en_riesgo_sla") == 1),
+}
+
+drill_cols = st.columns(4)
+for col, (drill_key, (etiqueta, _, _)) in zip(drill_cols, DRILLDOWN_KPIS.items()):
+    if col.button(etiqueta, key=f"drill_{drill_key}", width="stretch"):
+        actual = st.session_state.get("kpi_drilldown")
+        st.session_state["kpi_drilldown"] = None if actual == drill_key else drill_key
+
+drilldown_activo = st.session_state.get("kpi_drilldown")
+if drilldown_activo:
+    _, titulo, mascara = DRILLDOWN_KPIS[drilldown_activo]
+    subset = filtered[mascara.fillna(False)]
+    section_title(f"🔎 {titulo}", f"{len(subset)} tarea(s). Clica el mismo boton otra vez para cerrar.")
+    if subset.empty:
+        empty_state("No hay tareas en este grupo para el periodo/filtros actuales.")
+    else:
+        st.dataframe(
+            subset,
+            width="stretch",
+            hide_index=True,
+            column_config={
+                "ticket_id": "Ticket",
+                "resumen": stcc.TextColumn("Resumen", width="large"),
+                "cliente": "Cliente",
+                "asignado_a": "Técnico",
+                "estado": "Estado",
+                "prioridad": "Prioridad",
+                "size": "Tamaño",
+                "fecha_creacion": stcc.DatetimeColumn("Creado", format="DD/MM/YYYY"),
+                "fecha_resolucion": stcc.DatetimeColumn("Resuelto", format="DD/MM/YYYY"),
+                "horas_resolucion": stcc.NumberColumn("Horas resolución", format="%.1f h"),
+            },
+            column_order=[
+                c for c in [
+                    "ticket_id", "resumen", "cliente", "asignado_a", "estado",
+                    "prioridad", "size", "fecha_creacion", "fecha_resolucion", "horas_resolucion",
+                ] if c in subset.columns
+            ],
+        )
+
 kpi_grid(
     [
         ("Tiempo medio resolución", f"{kpis['dias_resolucion_promedio']} días", "Media de días desde creación hasta cierre", ""),
@@ -506,5 +554,5 @@ else:
     empty_state("No se detectaron tickets con señales de reapertura en los filtros actuales.")
 
 
-render_ranking_clientes(filtered)
+render_ranking_clientes(filtered, role=role)
 render_detalle_cliente(filtered, role, key_prefix="dash_")

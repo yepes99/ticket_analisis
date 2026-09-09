@@ -47,42 +47,62 @@ def completar_bono_horas(df):
     return df
 
 
+def calcular_bono_por_cliente(df):
+    """
+    Saldo del bono de horas (comprado/consumido/disponible) de TODOS los
+    clientes a la vez -- mismo calculo que calcular_bono_cliente pero en
+    bloque, para la tabla de ranking (evita iterar cliente a cliente).
+    Devuelve un DataFrame indexado por 'cliente'.
+    """
+    columnas = ["comprado", "consumido", "disponible"]
+    if "bono_horas_compradas" not in df.columns or "cliente" not in df.columns:
+        return pd.DataFrame(columns=columnas)
+
+    es_compra = df["bono_horas_compradas"].notna()
+
+    comprado = df.loc[es_compra].groupby("cliente")["bono_horas_compradas"].sum()
+
+    horas_normales = pd.to_numeric(df.loc[~es_compra, "horas_resolucion"], errors="coerce")
+    consumido = horas_normales.groupby(df.loc[~es_compra, "cliente"]).sum()
+
+    resumen = pd.concat({"comprado": comprado, "consumido": consumido}, axis=1).fillna(0.0)
+    if resumen.empty:
+        return pd.DataFrame(columns=columnas)
+
+    resumen["disponible"] = resumen["comprado"] - resumen["consumido"]
+    # Sin ningun bono comprado no hay saldo que mostrar (no tiene sentido un
+    # disponible negativo para un cliente que nunca ha comprado bono).
+    resumen.loc[resumen["comprado"] <= 0, "disponible"] = 0.0
+    return resumen
+
+
 def calcular_bono_cliente(filtered, cliente):
     """
-    Calcula el saldo del bono de horas de un cliente:
-    - comprado: suma de horas de todas las compras de bono detectadas.
-    - consumido: horas de resolucion de los tickets normales (no de compra).
-    - disponible: comprado - consumido. Se acumula entre varias compras,
-      ej. se compran 10h, se usan 9h (1h disponible) y se compran otras
-      10h -> 11h disponibles.
+    Calcula el saldo del bono de horas de un cliente concreto (ver
+    calcular_bono_por_cliente) mas el detalle de sus compras individuales.
+    Se acumula entre varias compras, ej. se compran 10h, se usan 9h (1h
+    disponible) y se compran otras 10h -> 11h disponibles.
     """
+    resumen = calcular_bono_por_cliente(filtered)
+    if cliente in resumen.index:
+        fila = resumen.loc[cliente]
+        comprado, consumido, disponible = float(fila["comprado"]), float(fila["consumido"]), float(fila["disponible"])
+    else:
+        comprado = consumido = disponible = 0.0
+
     sub = filtered[filtered["cliente"] == cliente]
-
-    if "bono_horas_compradas" not in sub.columns:
-        return {
-            "comprado": 0.0,
-            "consumido": 0.0,
-            "disponible": 0.0,
-            "compras": pd.DataFrame(columns=["ticket_id", "fecha_creacion", "bono_horas_compradas"]),
-        }
-
-    es_compra = sub["bono_horas_compradas"].notna()
-
-    compras = sub.loc[es_compra, ["ticket_id", "fecha_creacion", "bono_horas_compradas"]].copy()
-    comprado = float(sub.loc[es_compra, "bono_horas_compradas"].sum())
-
-    horas_normales = pd.to_numeric(sub.loc[~es_compra, "horas_resolucion"], errors="coerce")
-    consumido = float(horas_normales.sum(skipna=True))
-
-    # Sin ningun bono comprado no hay saldo que mostrar (no tiene sentido
-    # un disponible negativo para un cliente que nunca ha comprado bono).
-    disponible = comprado - consumido if comprado > 0 else 0.0
+    if "bono_horas_compradas" in sub.columns:
+        es_compra = sub["bono_horas_compradas"].notna()
+        compras = sub.loc[es_compra, ["ticket_id", "fecha_creacion", "bono_horas_compradas"]].copy()
+        compras = compras.sort_values("fecha_creacion", ascending=False)
+    else:
+        compras = pd.DataFrame(columns=["ticket_id", "fecha_creacion", "bono_horas_compradas"])
 
     return {
         "comprado": comprado,
         "consumido": consumido,
         "disponible": disponible,
-        "compras": compras.sort_values("fecha_creacion", ascending=False),
+        "compras": compras,
     }
 
 

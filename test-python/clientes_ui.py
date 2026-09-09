@@ -56,32 +56,121 @@ def _valor_reciente(serie):
     return str(valores.iloc[0]), detalle
 
 
-def render_ranking_clientes(filtered):
+RANKING_COLUMN_CONFIG = {
+    "cliente": stcc.TextColumn("Cliente", width="medium"),
+    "dominios": stcc.TextColumn("Domain / URL", width="medium"),
+    "tickets": stcc.NumberColumn("Tickets Bug", format="%d"),
+    "tickets_sin_tiempo": stcc.NumberColumn("Sin tiempo", format="%d"),
+    "sla": stcc.TextColumn("SLA global"),
+    "tiempo_horas": stcc.TextColumn("Tiempo medio"),
+    "plan": stcc.TextColumn("Plan", width="medium"),
+    "tipo": stcc.TextColumn("Tipo", width="medium"),
+    "bono": stcc.TextColumn("Bono de horas", width="medium"),
+}
+
+# "bono_comprado"/"bono_disponible" son columnas auxiliares (solo para
+# calcular la celda "bono" formateada) que no deben verse en la tabla.
+RANKING_COLUMN_ORDER = [
+    "cliente", "dominios", "tickets", "tickets_sin_tiempo", "sla", "tiempo_horas", "plan", "tipo", "bono",
+]
+
+# Alto (en px) de la cabecera y de cada fila de un st.dataframe en esta
+# version de Streamlit, medido empiricamente. Con un alto fijo "a ojo" (o
+# sin alto, que usa un valor por defecto) la ultima fila visible quedaba
+# cortada a la mitad antes del scroll interno -- se veia raro. Con un
+# multiplo exacto de FILA_ALTO_PX nunca se corta una fila a medias.
+CABECERA_ALTO_PX = 70
+FILA_ALTO_PX = 36
+
+
+def _alto_tabla_completa(n_filas, max_filas=None):
+    """
+    Alto exacto (cabecera + N filas completas, nunca una fila a medias)
+    para que quepan todas las filas sin scroll interno. Con max_filas se
+    pone un tope (para listas muy largas) que tambien cae en un multiplo
+    exacto de fila, asi que el corte sigue siendo limpio.
+    """
+    filas = max(n_filas, 1)
+    if max_filas:
+        filas = min(filas, max_filas)
+    return CABECERA_ALTO_PX + filas * FILA_ALTO_PX
+
+
+def _formatear_tabla_ranking(clientes_resumen):
+    """
+    "sla"/"tiempo_horas" salen de un .mean() que puede dar NaN (cliente sin
+    tickets resueltos todavia); "plan"/"tipo" pueden no estar rellenados en
+    Jira. Un valor nulo en una NumberColumn de Streamlit se renderiza como
+    el texto literal "None", asi que todo esto se formatea a texto aqui
+    mismo (con un guion para "sin datos") y se muestra como TextColumn.
+    """
+    tabla = clientes_resumen.copy()
+    tabla["sla"] = tabla["sla"].apply(lambda v: f"{v:.1f}%" if pd.notna(v) else "—")
+    tabla["tiempo_horas"] = tabla["tiempo_horas"].apply(lambda v: f"{v:.1f} h" if pd.notna(v) else "—")
+    tabla["plan"] = tabla["plan"].fillna("—") if "plan" in tabla.columns else "—"
+    tabla["tipo"] = tabla["tipo"].fillna("—") if "tipo" in tabla.columns else "—"
+
+    def _bono_celda(row):
+        comprado = row.get("bono_comprado", 0.0)
+        disponible = row.get("bono_disponible", 0.0)
+        tono, icono, _ = bono.bono_tono(comprado, disponible)
+        if tono == "neutral":
+            return "—"
+        return f"{icono} {disponible:.1f} h"
+
+    tabla["bono"] = tabla.apply(_bono_celda, axis=1)
+    return tabla
+
+# Roles con vista simplificada: sin el grafico (no les aporta, solo la
+# tabla les interesa) y a ancho completo para que la tabla sea mas grande
+# y comoda de leer.
+ROLES_VISTA_SIMPLE_RANKING = {"cs", "lector"}
+
+
+def render_ranking_clientes(filtered, role=None):
     section_title(
         "Tickets por cliente",
         "Conteo exacto de bugs Jira unicos, con el nombre comercial separado del dominio.",
     )
     clientes_resumen = calculate_top_clients(filtered)
-    if not clientes_resumen.empty:
-        chart_col, table_col = st.columns([1, 1.35], gap="large")
-        with chart_col:
-            render_chart_wrapper(create_top_clients_chart(clientes_resumen.head(20)))
-        with table_col:
-            st.dataframe(
-                clientes_resumen,
-                width="stretch",
-                hide_index=True,
-                column_config={
-                    "cliente": stcc.TextColumn("Cliente", width="medium"),
-                    "dominios": stcc.TextColumn("Domain / URL", width="large"),
-                    "tickets": stcc.NumberColumn("Tickets Bug", format="%d"),
-                    "tickets_sin_tiempo": stcc.NumberColumn("Sin tiempo", format="%d"),
-                    "sla": stcc.NumberColumn("SLA global", format="%.1f%%"),
-                    "tiempo_horas": stcc.NumberColumn("Tiempo medio", format="%.1f h"),
-                },
-            )
-    else:
+    if clientes_resumen.empty:
         empty_state("No hay clientes para los filtros actuales.")
+        return
+
+    busqueda = st.text_input(
+        "Buscar cliente",
+        placeholder="🔎 Busca por nombre de cliente o dominio...",
+        key="ranking_clientes_busqueda",
+    )
+    if busqueda:
+        termino = busqueda.strip().lower()
+        clientes_resumen = clientes_resumen[
+            clientes_resumen["cliente"].str.lower().str.contains(termino, na=False)
+            | clientes_resumen["dominios"].str.lower().str.contains(termino, na=False)
+        ]
+
+    if clientes_resumen.empty:
+        empty_state(f"Ningun cliente coincide con \"{busqueda}\".")
+        return
+
+    # Sin tope: con "muy completa" pedido explicitamente, mejor pagina larga
+    # que un scroll interno que corte clientes a medias.
+    alto_tabla = _alto_tabla_completa(len(clientes_resumen))
+
+    if role not in ROLES_VISTA_SIMPLE_RANKING:
+        # Admin/Soporte: grafico arriba a ancho completo. Antes iba en
+        # columna junto a la tabla y la dejaba apretada; ahora la tabla de
+        # abajo es tan completa como la que ve CS.
+        render_chart_wrapper(create_top_clients_chart(clientes_resumen.head(20)))
+
+    st.dataframe(
+        _formatear_tabla_ranking(clientes_resumen),
+        width="stretch",
+        hide_index=True,
+        height=alto_tabla,
+        column_config=RANKING_COLUMN_CONFIG,
+        column_order=RANKING_COLUMN_ORDER,
+    )
 
 
 def render_detalle_cliente(filtered, role, key_prefix=""):
@@ -181,6 +270,7 @@ def render_detalle_cliente(filtered, role, key_prefix=""):
                 bono_info["compras"],
                 width="stretch",
                 hide_index=True,
+                height=_alto_tabla_completa(len(bono_info["compras"]), max_filas=8),
                 column_config={
                     "ticket_id": "Ticket",
                     "fecha_creacion": stcc.DatetimeColumn("Fecha", format="DD/MM/YYYY"),
@@ -298,6 +388,7 @@ def render_detalle_cliente(filtered, role, key_prefix=""):
             tabla_historial.style.apply(highlight_diferencia_horas, axis=1),
             width="stretch",
             hide_index=True,
+            height=_alto_tabla_completa(len(tabla_historial), max_filas=15),
             column_config={
                 "ticket_id": "Ticket",
                 "cliente_nombre": "Cliente",

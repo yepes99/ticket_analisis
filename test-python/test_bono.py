@@ -6,6 +6,7 @@ from bono import (
     BONO_ALERTA_HORAS,
     bono_tono,
     calcular_bono_cliente,
+    calcular_bono_por_cliente,
     detectar_bonos_sin_cliente,
     extraer_horas_bono,
 )
@@ -106,6 +107,29 @@ class BonoTonoTest(unittest.TestCase):
     def test_bono_holgado_es_success(self):
         tono, _, _ = bono_tono(10.0, 5.0)
         self.assertEqual(tono, "success")
+
+
+class CalcularBonoPorClienteTest(unittest.TestCase):
+    def test_calcula_varios_clientes_a_la_vez(self):
+        df = pd.DataFrame(
+            [
+                {"cliente": "A", "ticket_id": "WP-1", "bono_horas_compradas": 10.0, "horas_resolucion": None},
+                {"cliente": "A", "ticket_id": "WP-2", "bono_horas_compradas": None, "horas_resolucion": 9.0},
+                {"cliente": "B", "ticket_id": "WP-3", "bono_horas_compradas": None, "horas_resolucion": 5.0},
+            ]
+        )
+
+        resumen = calcular_bono_por_cliente(df)
+
+        self.assertEqual(resumen.loc["A", "comprado"], 10.0)
+        self.assertEqual(resumen.loc["A", "disponible"], 1.0)
+        # "B" nunca compro bono: disponible se queda en 0, no en negativo.
+        self.assertEqual(resumen.loc["B", "comprado"], 0.0)
+        self.assertEqual(resumen.loc["B", "disponible"], 0.0)
+
+    def test_sin_columna_bono_devuelve_vacio(self):
+        df = pd.DataFrame([{"cliente": "A", "ticket_id": "WP-1"}])
+        self.assertTrue(calcular_bono_por_cliente(df).empty)
 
 
 class DetectarBonosSinClienteTest(unittest.TestCase):

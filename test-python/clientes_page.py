@@ -114,7 +114,7 @@ if filtered.empty:
 tabs = st.tabs(["📊 Ranking de clientes", "🔍 Detalle por cliente"])
 
 with tabs[0]:
-    render_ranking_clientes(filtered)
+    render_ranking_clientes(filtered, role=role)
 
 with tabs[1]:
     render_detalle_cliente(filtered, role)
