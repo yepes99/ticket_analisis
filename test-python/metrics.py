@@ -5,6 +5,7 @@ Cálculo de métricas y KPIs.
 import re
 import pandas as pd
 
+from bono import calcular_bono_por_cliente
 from config import TECNICOS_PERMITIDOS
 
 
@@ -183,21 +184,25 @@ def calculate_technician_ranking(df):
     return ranking.sort_values("tickets", ascending=False)
 
 
+def _ultimo_valor_no_nulo(serie):
+    """Primer valor no nulo de la serie -- se llama sobre datos ya ordenados por fecha desc, asi que es "el mas reciente"."""
+    no_nulos = serie.dropna()
+    return no_nulos.iloc[0] if not no_nulos.empty else None
+
+
 def calculate_top_clients(df):
     """
-    Devuelve todos los clientes consultados en Jira ordenados por volumen de tareas.
+    Devuelve todos los clientes consultados en Jira ordenados por volumen de
+    tareas, con su Plan/Tipo (valor mas reciente en Jira) y el saldo de su
+    bono de horas (ver bono.py).
     """
     data = df.copy()
     data["cliente"] = data["cliente"].fillna("Sin cliente")
-    if "cliente_domain" not in data.columns:
-        data["cliente_domain"] = pd.NA
-    if "sla_global_cumple" not in data.columns:
-        data["sla_global_cumple"] = pd.NA
-    if "dias_resolucion" not in data.columns:
-        data["dias_resolucion"] = pd.NA
-    if "horas_resolucion" not in data.columns:
-        data["horas_resolucion"] = pd.NA
+    for columna in ("cliente_domain", "sla_global_cumple", "dias_resolucion", "horas_resolucion", "plan_servicio", "tipo_producto"):
+        if columna not in data.columns:
+            data[columna] = pd.NA
     data["horas_resolucion"] = pd.to_numeric(data["horas_resolucion"], errors="coerce")
+
     clientes_df = (
         data.groupby("cliente", dropna=False)
         .agg(
@@ -214,6 +219,32 @@ def calculate_top_clients(df):
     if not clientes_df.empty:
         clientes_df["sla"] = (clientes_df["sla"] * 100).round(1)
         clientes_df["tiempo_horas"] = clientes_df["tiempo_horas"].round(1)
+
+    # Plan/Tipo: el valor mas reciente visto en Jira para cada cliente.
+    data_reciente = data.sort_values("fecha_creacion", ascending=False) if "fecha_creacion" in data.columns else data
+    ultimos = (
+        data_reciente.groupby("cliente", dropna=False)
+        .agg(plan=("plan_servicio", _ultimo_valor_no_nulo), tipo=("tipo_producto", _ultimo_valor_no_nulo))
+        .reset_index()
+    )
+    clientes_df = clientes_df.merge(ultimos, on="cliente", how="left")
+
+    # Bono de horas: saldo disponible de cada cliente (0 si nunca ha comprado).
+    bono_df = calcular_bono_por_cliente(data)
+    if not bono_df.empty:
+        clientes_df = clientes_df.merge(
+            bono_df[["comprado", "disponible"]].rename(
+                columns={"comprado": "bono_comprado", "disponible": "bono_disponible"}
+            ),
+            left_on="cliente",
+            right_index=True,
+            how="left",
+        )
+    else:
+        clientes_df["bono_comprado"] = 0.0
+        clientes_df["bono_disponible"] = 0.0
+    clientes_df["bono_comprado"] = clientes_df["bono_comprado"].fillna(0.0)
+    clientes_df["bono_disponible"] = clientes_df["bono_disponible"].fillna(0.0)
 
     return clientes_df
 
@@ -250,6 +281,8 @@ def calculate_client_ticket_detail(df, cliente):
         "cliente_url",
         "resumen",
         "tipo",
+        "plan_servicio",
+        "tipo_producto",
         "estado",
         "resuelto",
         "prioridad",
@@ -259,6 +292,8 @@ def calculate_client_ticket_detail(df, cliente):
         "fecha_resolucion",
         "dias_resolucion",
         "horas_resolucion",
+        "horas_pending_info",
+        "horas_trabajo_real",
         "presupuesto",
         "diferencia_horas",
         "sla_prioridad_cumple",

@@ -7,6 +7,7 @@ import requests
 import streamlit as st
 import tomllib
 
+from bono import completar_bono_horas
 from categorias import completar_categorias
 from cliente import completar_cliente
 from sla import completar_sla
@@ -58,14 +59,11 @@ JIRA_FIELD_ALIASES = {
         "Budget",
         "Campo personalizado (Budget)",
     ],
-    "es_wordpress": [
-        "¿Es WordPress?",
-        "Es WordPress",
-        "WordPress",
-    ],
     "plan_servicio": [
-        "Plan Web",
         "Plan",
+    ],
+    "tipo_producto": [
+        "Tipo",
     ],
 }
 
@@ -92,8 +90,10 @@ JIRA_COLUMNS = [
     "cliente_empresa",
     "size",
     "presupuesto",
-    "es_wordpress",
     "plan_servicio",
+    "tipo_producto",
+    "es_wordpress",
+    "historial_estados",
 ]
 
 SPANISH_MONTHS = {
@@ -171,6 +171,8 @@ def procesar_tickets_jira(df):
     df = completar_categorias(df)
 
     df = completar_sla(df)
+
+    df = completar_bono_horas(df)
 
     df = completar_fechas_analiticas(df)
 
@@ -306,11 +308,19 @@ def componer_jql(
     Añade filtros de fecha al JQL existente.
 
     Con inicio y fin (p.ej. "Ultima semana"), el periodo se interpreta como
-    "actividad en el periodo": incluye un ticket si se creo O se actualizo
-    dentro del rango, aunque se creara antes. Si no fuera asi, un tecnico
-    que trabaja sobre tickets antiguos (los actualiza/resuelve pero no los
-    crea) desaparece de cualquier periodo corto aunque este trabajando
-    activamente en el.
+    "actividad en el periodo": incluye un ticket si se creo O cambio de
+    estado dentro del rango, aunque se creara antes. Si no fuera asi, un
+    tecnico que trabaja sobre tickets antiguos (los mueve de estado hasta
+    resolverlos, pero no los crea) desaparece de cualquier periodo corto
+    aunque este trabajando activamente en el.
+
+    Se usa "status changed" en vez de "updated": el campo updated de Jira
+    se toca con CUALQUIER cambio (adjuntos, comentarios, campos internos),
+    incluidas limpiezas masivas administrativas que no son trabajo real
+    (se detecto un caso real: una limpieza de adjuntos antiguos en 2026-07-28
+    marco como "actualizados" miles de tickets de anos anteriores sin
+    relacion con el periodo consultado). "status changed" solo refleja
+    progreso real del ticket.
 
     Ejemplo, con start_date="2026-07-28" y end_date="2026-08-28":
 
@@ -320,7 +330,7 @@ def componer_jql(
 
     (project = WP AND type = Bug) AND (
         (created >= "2026-07-28" AND created < "2026-08-29")
-        OR (updated >= "2026-07-28" AND updated < "2026-08-29")
+        OR (status changed after "2026-07-28" before "2026-08-29")
     )
 
     Si solo se indica end_date (sin start_date, p.ej. "Todo el historico",
@@ -348,7 +358,10 @@ def componer_jql(
         return " AND ".join(partes)
 
     if start_value:
-        filtro_fecha = f"({rango('created')}) OR ({rango('updated')})"
+        filtro_actividad = f'status changed after "{start_value}"'
+        if end_exclusive:
+            filtro_actividad += f' before "{end_exclusive}"'
+        filtro_fecha = f"({rango('created')}) OR ({filtro_actividad})"
     else:
         filtro_fecha = rango("created")
 
@@ -400,6 +413,7 @@ def consultar_jira(
             if fields
             else ",".join(JIRA_BASE_FIELDS)
         ),
+        "expand": "changelog",
     }
 
     if next_page_token:
@@ -634,15 +648,17 @@ def transformar_payload_jira(payload):
                     field_map.get("presupuesto"),
                 ),
 
-                "es_wordpress": extraer_valor_campo_jira(
-                    fields,
-                    field_map.get("es_wordpress"),
-                ),
-
                 "plan_servicio": extraer_valor_campo_jira(
                     fields,
                     field_map.get("plan_servicio"),
                 ),
+
+                "tipo_producto": extraer_valor_campo_jira(
+                    fields,
+                    field_map.get("tipo_producto"),
+                ),
+
+                "historial_estados": extraer_historial_estados(issue),
             }
         )
 
@@ -666,6 +682,25 @@ def transformar_payload_jira(payload):
     df["presupuesto"] = pd.to_numeric(
         df["presupuesto"],
         errors="coerce",
+    )
+
+    # dtype "string" en vez de "object": un valor ausente queda como <NA> de
+    # pandas y se muestra como celda vacia en las tablas, en vez del texto
+    # literal "None" que sale con un None de Python suelto en una columna object.
+    df["plan_servicio"] = df["plan_servicio"].astype("string")
+    df["tipo_producto"] = df["tipo_producto"].astype("string")
+
+    # No existe un campo dedicado "¿Es WordPress?" en Jira: se deriva del
+    # campo real "Plan", cuyos valores WordPress empiezan por "WP" (WP
+    # Smart, WP Advanced, WP Custom), a diferencia de los de Frameworks
+    # (Business, Premium, Enterprise, Custom, API, Integration...).
+    df["es_wordpress"] = (
+        df["plan_servicio"]
+        .astype("string")
+        .str.strip()
+        .str.upper()
+        .str.startswith("WP")
+        .fillna(False)
     )
 
     return df
@@ -697,6 +732,44 @@ def extraer_categoria_estado(status_value):
         return category.get("key")
 
     return None
+
+
+def _parsear_fecha_iso(value):
+    """Fecha ISO de Jira (con offset) a datetime naive en hora de Madrid."""
+    if not value:
+        return None
+    ts = pd.Timestamp(value)
+    if ts.tzinfo is not None:
+        ts = ts.tz_convert("Europe/Madrid").tz_localize(None)
+    return ts
+
+
+def extraer_historial_estados(issue):
+    """
+    Historial de cambios de estado del ticket (requiere expand=changelog
+    en la consulta), ordenado por fecha. Se usa para calcular cuanto
+    tiempo paso en "Pending Info" y cuando "se cogio" el ticket (sale de
+    Backlog) -- ver sla.completar_metricas_resolucion.
+    """
+    historias = issue.get("changelog", {}).get("histories", [])
+    cambios = []
+
+    for historia in historias:
+        fecha = _parsear_fecha_iso(historia.get("created"))
+        if fecha is None:
+            continue
+        for item in historia.get("items", []):
+            if item.get("field") == "status":
+                cambios.append(
+                    {
+                        "fecha": fecha,
+                        "de": item.get("fromString"),
+                        "a": item.get("toString"),
+                    }
+                )
+
+    cambios.sort(key=lambda cambio: cambio["fecha"])
+    return cambios
 
 
 def extraer_valor_campo_jira(

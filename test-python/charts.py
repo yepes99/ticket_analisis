@@ -183,36 +183,6 @@ def create_priority_bar_chart(df):
     return fig
 
 
-def create_technician_sla_chart(top_tech_df):
-    """
-    Crea gráfico de SLA por técnico.
-    """
-    fig = go.Figure()
-    fig.add_trace(
-        go.Bar(
-            name="SLA global",
-            x=top_tech_df["asignado_a"],
-            y=top_tech_df["sla_global"],
-            marker=dict(color=PLOT_COLORS[0], line=dict(width=0.6, color="#0e1720")),
-            opacity=0.95,
-            hovertemplate="%{x}<br>SLA global: %{y}%<extra></extra>",
-        )
-    )
-    fig.add_trace(
-        go.Bar(
-            name="SLA size",
-            x=top_tech_df["asignado_a"],
-            y=top_tech_df["sla_size"],
-            marker=dict(color=PLOT_COLORS[1], line=dict(width=0.6, color="#0e1720")),
-            opacity=0.95,
-            hovertemplate="%{x}<br>SLA size: %{y}%<extra></extra>",
-        )
-    )
-    fig.update_layout(barmode="group", xaxis_tickangle=-45, yaxis=dict(range=[0, 100], title="%"))
-    apply_chart_layout(fig, title="SLA por técnico (Top 15)")
-    return fig
-
-
 def create_sla_comparison_chart(sla_size_df):
     """
     Crea gráfico comparativo de SLA objetivo vs real por size.
@@ -263,8 +233,13 @@ def create_top_clients_chart(clientes_df):
         opacity=0.94,
         hovertemplate="%{y}<br>Tickets: %{x}<extra></extra>",
         text=clientes_df.sort_values("tickets", ascending=True)["tickets"],
-        textposition="inside",
+        # "inside" giraba la etiqueta 90 grados cuando no cabia en barras muy
+        # cortas (clientes con 1 ticket), dejando un simbolo ilegible. Con
+        # "outside" + textangle=0 la etiqueta siempre queda horizontal, justo
+        # despues de la barra, quepa o no dentro.
+        textposition="outside",
         texttemplate="%{text}",
-        insidetextanchor="middle",
+        textangle=0,
+        cliponaxis=False,
     )
     return fig

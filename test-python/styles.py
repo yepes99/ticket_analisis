@@ -18,7 +18,7 @@ APP_CSS = """
     --success: #42d392;
     --warning: #f5b84b;
     --danger: #ff6b6b;
-    --shadow: 0 22px 52px rgba(0, 0, 0, 0.34);
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.24);
 }
 
 html, body, [data-testid="stAppViewContainer"] {
@@ -65,13 +65,13 @@ button[data-testid="baseButton-secondary"],
 .stButton button,
 [data-testid="stButton"] button,
 [data-testid="stDownloadButton"] button {
-    border-radius: 8px !important;
+    border-radius: 4px !important;
     border: 1px solid var(--brand) !important;
-    background: linear-gradient(180deg, var(--brand) 0%, #227bd0 100%) !important;
+    background: var(--brand) !important;
     color: #ffffff !important;
-    font-weight: 700 !important;
-    min-height: 2.75rem !important;
-    transition: all 160ms ease !important;
+    font-weight: 600 !important;
+    min-height: 2.6rem !important;
+    transition: background-color 120ms ease, border-color 120ms ease !important;
     text-shadow: none !important;
 }
 
@@ -82,9 +82,9 @@ button[data-testid="baseButton-secondary"]:hover,
 [data-testid="stButton"] button:hover,
 [data-testid="stDownloadButton"] button:hover {
     border-color: var(--brand-strong) !important;
-    background: linear-gradient(180deg, var(--brand-strong) 0%, #3490e6 100%) !important;
+    background: var(--brand-strong) !important;
     color: #ffffff !important;
-    box-shadow: 0 12px 28px rgba(70, 166, 255, 0.24) !important;
+    box-shadow: none !important;
 }
 
 /* Asegurar que el texto del botón sea siempre blanco */
@@ -116,7 +116,7 @@ button[data-testid="baseButton-secondary"],
 [data-testid="stDateInput"] [data-baseweb="input"],
 [data-testid="stDateInput"] input {
     background: #0c141f;
-    border-radius: 8px;
+    border-radius: 4px;
     border-color: var(--line);
     color: var(--ink);
 }
@@ -144,7 +144,7 @@ label,
 [data-testid="stMetric"] {
     background: linear-gradient(180deg, #121d2a 0%, #0f1723 100%);
     border: 1px solid var(--line);
-    border-radius: 8px;
+    border-radius: 4px;
     padding: 1.1rem 1.2rem;
     box-shadow: var(--shadow);
 }
@@ -167,7 +167,7 @@ label,
     background:
         linear-gradient(135deg, rgba(24, 36, 52, 0.98) 0%, rgba(16, 24, 35, 0.98) 56%, rgba(13, 36, 56, 0.96) 100%);
     border: 1px solid var(--line);
-    border-radius: 8px;
+    border-radius: 4px;
     padding: 1.35rem 1.5rem;
     box-shadow: var(--shadow);
     margin-bottom: 20px;
@@ -211,25 +211,45 @@ label,
 }
 
 .login-wrap {
-    max-width: 760px;
-    margin: 7vh auto 1.2rem;
+    margin: 9vh auto 0;
     background: linear-gradient(135deg, rgba(18, 29, 42, 0.98), rgba(12, 20, 31, 0.98));
     border: 1px solid var(--line);
-    border-radius: 8px;
-    padding: 2.3rem 2.5rem;
+    border-radius: 4px;
+    padding: 2rem 1.8rem 1.6rem;
     box-shadow: var(--shadow);
+    text-align: center;
+}
+
+.login-icon {
+    font-size: 1.7rem;
+    line-height: 1;
+    margin-bottom: 0.6rem;
+}
+
+.login-wrap .eyebrow {
+    display: block;
 }
 
 .login-wrap h1 {
     color: var(--ink);
-    margin: 0 0 0.45rem;
-    font-size: 2rem;
+    margin: 0.3rem 0 0.5rem;
+    font-size: 1.55rem;
 }
 
 .login-wrap p {
     color: var(--ink-soft);
-    margin: 0 0 1.5rem;
+    margin: 0;
     line-height: 1.5;
+    font-size: 0.9rem;
+}
+
+/*
+ * Los inputs y botones (widgets nativos de Streamlit, fuera del div de
+ * arriba) comparten la misma columna estrecha: quedan visualmente unidos
+ * a la tarjeta aunque tecnicamente sean elementos hermanos, no hijos.
+ */
+div[data-testid="stAppViewContainer"] .stTextInput {
+    margin-top: 0.9rem;
 }
 
 .section-title {
@@ -258,14 +278,14 @@ label,
 .empty-state {
     background: var(--surface);
     border: 1px dashed var(--line);
-    border-radius: 8px;
+    border-radius: 4px;
     padding: 1.4rem;
     color: var(--ink-soft);
 }
 
 .stDataFrame {
     border: 1px solid var(--line);
-    border-radius: 8px;
+    border-radius: 4px;
     overflow: hidden;
     box-shadow: var(--shadow);
     background: var(--surface) !important;
@@ -299,39 +319,36 @@ label,
 
 .kpi-card {
     position: relative;
-    overflow: hidden;
     min-height: 108px;
-    background: linear-gradient(180deg, #121d2a 0%, #0f1723 100%);
+    background: var(--surface);
     border: 1px solid var(--line);
-    border-radius: 10px;
-    padding: 1rem;
+    border-left: 4px solid var(--line);
+    border-radius: 4px;
+    padding: 1rem 1.1rem;
     box-shadow: var(--shadow);
 }
 
-.kpi-card::before {
-    content: "";
-    position: absolute;
-    inset: 0 0 auto 0;
-    height: 3px;
-    background: linear-gradient(90deg, var(--brand), var(--success));
+.kpi-card.success {
+    background: linear-gradient(135deg, rgba(66, 211, 146, 0.14) 0%, var(--surface) 60%);
+    border-left-color: var(--success);
 }
 
-.kpi-card.success::before {
-    background: linear-gradient(90deg, var(--success), #8cf0bd);
+.kpi-card.warning {
+    background: linear-gradient(135deg, rgba(245, 184, 75, 0.16) 0%, var(--surface) 60%);
+    border-left-color: var(--warning);
 }
 
-.kpi-card.warning::before {
-    background: linear-gradient(90deg, var(--warning), #ffe08a);
-}
-
-.kpi-card.danger::before {
-    background: linear-gradient(90deg, var(--danger), #ff9a9a);
+.kpi-card.danger {
+    background: linear-gradient(135deg, rgba(255, 107, 107, 0.18) 0%, var(--surface) 60%);
+    border-left-color: var(--danger);
 }
 
 .kpi-label {
     color: var(--muted);
-    font-size: 0.82rem;
+    font-size: 0.78rem;
     font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
     line-height: 1.25;
     margin: 0 0 0.65rem;
 }
@@ -339,10 +356,14 @@ label,
 .kpi-value {
     color: var(--ink);
     font-size: 2rem;
-    font-weight: 850;
+    font-weight: 800;
     line-height: 1;
     margin: 0;
 }
+
+.kpi-card.success .kpi-value { color: var(--success); }
+.kpi-card.warning .kpi-value { color: var(--warning); }
+.kpi-card.danger .kpi-value { color: var(--danger); }
 
 .kpi-sub {
     color: var(--ink-soft);
@@ -352,7 +373,7 @@ label,
 
 .chart-wrap {
     border: 1px solid var(--line);
-    border-radius: 10px;
+    border-radius: 4px;
     overflow: hidden;
     background: var(--surface);
     box-shadow: var(--shadow);
@@ -403,7 +424,7 @@ table tbody tr:hover {
     [data-testid="stButton"] button,
     [data-testid="stDownloadButton"] button {
         color: #ffffff !important;
-        background: linear-gradient(180deg, var(--brand) 0%, #227bd0 100%) !important;
+        background: var(--brand) !important;
     }
     
     .stButton > button span,
@@ -467,7 +488,7 @@ table tbody tr:hover {
 
     .hero {
         padding: 1rem;
-        border-radius: 12px;
+        border-radius: 4px;
         margin-bottom: 0.85rem;
     }
 
@@ -529,7 +550,7 @@ table tbody tr:hover {
 
     .kpi-card {
         min-height: 96px;
-        border-radius: 12px;
+        border-radius: 4px;
         padding: 0.85rem;
     }
 
@@ -548,7 +569,7 @@ table tbody tr:hover {
     }
 
     .chart-wrap {
-        border-radius: 12px;
+        border-radius: 4px;
     }
 
     div[data-testid="stDataFrame"] {
@@ -567,7 +588,7 @@ table tbody tr:hover {
 .stButton > button:not(:disabled),
 [data-testid="stButton"] button:not(:disabled),
 [data-testid="stDownloadButton"] button:not(:disabled) {
-    background: linear-gradient(180deg, var(--brand) 0%, #227bd0 100%) !important;
+    background: var(--brand) !important;
     background-color: var(--brand) !important;
     color: #ffffff !important;
     border: 1px solid var(--brand) !important;
@@ -576,7 +597,7 @@ table tbody tr:hover {
 .stButton > button:not(:disabled):hover,
 [data-testid="stButton"] button:not(:disabled):hover,
 [data-testid="stDownloadButton"] button:not(:disabled):hover {
-    background: linear-gradient(180deg, var(--brand-strong) 0%, #3490e6 100%) !important;
+    background: var(--brand-strong) !important;
     background-color: var(--brand-strong) !important;
     color: #ffffff !important;
 }
@@ -592,7 +613,7 @@ table tbody tr:hover {
 [data-testid="stSidebar"] .stButton > button,
 [data-testid="stSidebar"] [data-testid="stButton"] button,
 [data-testid="stSidebar"] [data-testid="stDownloadButton"] button {
-    background: linear-gradient(180deg, var(--brand) 0%, #227bd0 100%) !important;
+    background: var(--brand) !important;
     background-color: var(--brand) !important;
     color: #ffffff !important;
     border: 1px solid var(--brand) !important;
@@ -625,7 +646,7 @@ table tbody tr:hover {
 [role="listbox"] {
     background: var(--surface) !important;
     border: 1px solid var(--line) !important;
-    border-radius: 8px !important;
+    border-radius: 4px !important;
     box-shadow: var(--shadow) !important;
 }
 

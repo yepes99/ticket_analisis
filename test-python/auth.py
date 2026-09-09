@@ -1,10 +1,15 @@
 """
-Autenticacion de la aplicacion.
+Autenticacion y enrutado de la aplicacion.
+
+Un unico login (en el punto de entrada, app.py) resuelve el rol; a partir
+de ahi, st.navigation() solo enseña en la barra lateral las paginas a las
+que ese rol tiene acceso. Antes de iniciar sesion no se enseña ninguna
+pagina en la barra lateral.
 
 Roles:
-- admin (Web Admin): acceso completo, Dashboard + Clientes, unico que puede
-  corregir horas o configurar limites.
-- soporte, cs, lector: acceso solo a la pagina de Clientes, en modo consulta.
+- admin (Web Admin): Dashboard + Clientes. Unico que aprueba solicitudes.
+- soporte: Dashboard + Clientes. Puede solicitar cambios de horas/limite.
+- cs, lector: solo Clientes.
 """
 
 import streamlit as st
@@ -25,6 +30,7 @@ ROLE_LABELS = {
     "lector": "Lector",
 }
 
+DASHBOARD_ROLES = {"admin", "soporte"}
 CLIENTES_ROLES = {"admin", "soporte", "cs", "lector"}
 
 
@@ -35,43 +41,74 @@ def _resolve_role(username, password):
     return None
 
 
-def _login(allowed_roles):
+def _paginas_por_rol():
     """
-    Renderiza el formulario de login y maneja la autenticacion.
+    Crea los st.Page de la app. Se recrean en cada ejecucion del script de
+    entrada (asi lo espera st.navigation), no se guardan como constantes.
     """
-    username, password, col1, col2 = render_login_form()
+    dashboard = st.Page("dashboard_page.py", title="Dashboard", icon="📊")
+    clientes = st.Page("clientes_page.py", title="Clientes", icon="🧾")
+    return {
+        "admin": [dashboard, clientes],
+        "soporte": [dashboard, clientes],
+        "cs": [clientes],
+        "lector": [clientes],
+    }
 
-    if col1.button("Entrar", width="stretch"):
-        role = _resolve_role(username, password)
-        if role in allowed_roles:
-            st.session_state["role"] = role
+
+def login_gate():
+    """
+    Si ya hay una sesion iniciada, devuelve el rol sin dibujar nada.
+    Si no, muestra el formulario de login (sin ninguna pagina en la barra
+    lateral todavia) y devuelve None.
+    """
+    role = st.session_state.get("role")
+    if role:
+        return role
+
+    form_key = st.session_state.get("login_form_key", 0)
+    username, password, col1, col2 = render_login_form(
+        subtitulo="Introduce tus credenciales para acceder al dashboard de soporte web.",
+        form_key=form_key,
+    )
+
+    if col1.button("Entrar", width="stretch", key="login_entrar"):
+        resolved = _resolve_role(username, password)
+        if resolved is None:
+            st.error("Usuario o contrasena incorrectos.")
+        else:
+            st.session_state["role"] = resolved
             st.session_state["username"] = username
             st.rerun()
-        else:
-            st.error("Usuario o contrasena incorrectos")
 
-    if col2.button("Limpiar", width="stretch"):
+    if col2.button("Limpiar", width="stretch", key="login_limpiar"):
+        st.session_state.pop(f"login_username_{form_key}", None)
+        st.session_state.pop(f"login_password_{form_key}", None)
+        st.session_state["login_form_key"] = form_key + 1
         st.rerun()
 
+    return None
 
-DASHBOARD_ROLES = {"admin", "soporte"}
+
+def obtener_paginas(role):
+    """Lista de st.Page visibles en la barra lateral para este rol."""
+    return _paginas_por_rol().get(role, [])
 
 
 def check_authentication():
     """
-    Acceso al dashboard principal. Web Admin y Soporte (gestion de tickets).
+    Guarda de seguridad dentro de dashboard_page.py. El acceso ya se
+    decidio en el router (app.py); esto es solo defensa en profundidad.
     """
     if st.session_state.get("role") not in DASHBOARD_ROLES:
-        _login(allowed_roles=DASHBOARD_ROLES)
         st.stop()
 
 
 def check_clientes_authentication():
     """
-    Acceso a la pagina de clientes. Web Admin, Soporte, CS o Lector.
+    Guarda de seguridad dentro de clientes_page.py (ver check_authentication).
     """
     if st.session_state.get("role") not in CLIENTES_ROLES:
-        _login(allowed_roles=CLIENTES_ROLES)
         st.stop()
 
 

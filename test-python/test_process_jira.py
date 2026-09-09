@@ -15,7 +15,7 @@ class JiraQueryTest(unittest.TestCase):
             jql,
             '(project = WEB) AND '
             '((created >= "2026-08-21" AND created < "2026-08-28") '
-            'OR (updated >= "2026-08-21" AND updated < "2026-08-28")) '
+            'OR (status changed after "2026-08-21" before "2026-08-28")) '
             'ORDER BY created DESC',
         )
 

@@ -106,28 +106,40 @@ def render_welcome_header():
     )
 
 
-def render_login_form():
+def render_login_form(subtitulo=None, form_key=0):
     """
     Renderiza el formulario de login.
-    
+
+    Args:
+        subtitulo (str, optional): texto que explica que rol puede acceder
+            aqui, para que quede claro en que pantalla se esta entrando.
+        form_key (int): se incrusta en las keys de los campos. El boton
+            "Limpiar" lo incrementa para forzar un widget nuevo: si solo se
+            borra session_state[key] y se hace rerun, el input de texto se
+            queda con el valor tecleado (el frontend no lo resetea porque
+            sigue siendo el mismo componente); con una key distinta, Streamlit
+            monta un input realmente vacio.
+
     Returns:
-        tuple: (username, password) si el usuario intenta entrar, (None, None) si no
+        tuple: (username, password, col1, col2)
     """
-    _, login_col, _ = st.columns([0.5, 2.2, 0.5])
+    _, login_col, _ = st.columns([1, 1.15, 1])
 
     with login_col:
+        detalle = subtitulo or "Introduce tus credenciales para consultar metricas de tickets, cumplimiento SLA y rendimiento operativo."
         st.markdown(
-            """
+            f"""
             <div class="login-wrap">
+                <div class="login-icon">🔐</div>
                 <div class="eyebrow">Acceso privado</div>
                 <h1>Dashboard Jira Pro</h1>
-                <p>Introduce tus credenciales para consultar metricas de tickets, cumplimiento SLA y rendimiento operativo.</p>
+                <p>{escape(detalle)}</p>
             </div>
             """,
             unsafe_allow_html=True,
         )
-        username = st.text_input("Usuario", placeholder="usuario@empresa.com")
-        password = st.text_input("Contrasena", type="password", placeholder="Contrasena segura")
+        username = st.text_input("Usuario", placeholder="usuario@empresa.com", key=f"login_username_{form_key}")
+        password = st.text_input("Contrasena", type="password", placeholder="Contrasena segura", key=f"login_password_{form_key}")
 
         col1, col2 = st.columns(2, gap="medium")
         return username, password, col1, col2

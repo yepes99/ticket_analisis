@@ -19,6 +19,14 @@ SLA_SIZE_DIAS = {
 
 DEFAULT_SLA_HORAS = 24
 RISK_THRESHOLD = 0.8
+
+# Estado desde el que se considera que "cogen" el ticket (el tiempo de
+# trabajo real empieza al salir de aqui) y estado cuyo tiempo se descuenta
+# del computo desde creacion (esperando informacion, no es tiempo de
+# trabajo). Ver _analizar_historial_estados.
+ESTADO_COGIDO_DESDE = "Backlog"
+ESTADO_PENDING_INFO = "Pending Info"
+
 ESTADOS_RESUELTOS = {
     "finalizada",
     "finalizado",
@@ -47,6 +55,43 @@ def normalizar_size(series):
         .str.upper()
         .replace({"": pd.NA, "NAN": pd.NA, "NONE": pd.NA, "<NA>": pd.NA})
     )
+
+
+def _analizar_historial_estados(historial, cutoff):
+    """
+    A partir del historial de cambios de estado de un ticket (lista de
+    dicts con fecha/de/a, ya ordenada por fecha), calcula:
+    - horas_pending: horas pasadas en Pending Info hasta `cutoff` (si
+      sigue en Pending Info a esa fecha, cuenta hasta `cutoff`).
+    - fecha_cogido: cuando salio de Backlog por primera vez (o None si
+      nunca ha salido, p.ej. sigue en Backlog).
+
+    Cambios posteriores a `cutoff` (ticket resuelto y luego reabierto, o
+    todavia sin llegar) no se tienen en cuenta.
+    """
+    if not historial or pd.isna(cutoff):
+        return 0.0, None
+
+    fecha_cogido = None
+    pending_inicio = None
+    horas_pending = 0.0
+
+    for cambio in historial:
+        fecha = cambio.get("fecha")
+        if fecha is None or pd.isna(fecha) or fecha > cutoff:
+            break
+        if fecha_cogido is None and cambio.get("de") == ESTADO_COGIDO_DESDE:
+            fecha_cogido = fecha
+        if cambio.get("a") == ESTADO_PENDING_INFO and pending_inicio is None:
+            pending_inicio = fecha
+        elif cambio.get("de") == ESTADO_PENDING_INFO and pending_inicio is not None:
+            horas_pending += (fecha - pending_inicio).total_seconds() / 3600
+            pending_inicio = None
+
+    if pending_inicio is not None:
+        horas_pending += (cutoff - pending_inicio).total_seconds() / 3600
+
+    return horas_pending, fecha_cogido
 
 
 def completar_metricas_resolucion(df):
@@ -88,22 +133,54 @@ def completar_metricas_resolucion(df):
     fecha_resolucion = fecha_resolucion_bruta.where(resuelto_bool)
     df["fecha_resolucion"] = fecha_resolucion
 
-    df["horas_resolucion"] = (
-        (fecha_resolucion - fecha_creacion).dt.total_seconds() / 3600
-    ).round(2)
-
-    df["dias_resolucion"] = np.where(
-        fecha_resolucion.notna() & fecha_creacion.notna(),
-        (fecha_resolucion - fecha_creacion).dt.total_seconds() / 86400,
-        np.nan,
-    )
-
     fecha_fin = fecha_resolucion.where(fecha_resolucion.notna(), ahora)
+
+    # Horas en Pending Info (se descuentan del tiempo desde creacion) y
+    # fecha en que se "cogio" el ticket (sale de Backlog; el tiempo de
+    # trabajo real desde ahi NO descuenta Pending Info).
+    if "historial_estados" in df.columns:
+        analisis = [
+            _analizar_historial_estados(historial, cutoff)
+            for historial, cutoff in zip(df["historial_estados"], fecha_fin)
+        ]
+        horas_pending = pd.Series([a[0] for a in analisis], index=df.index)
+        fecha_cogido = pd.to_datetime(
+            pd.Series([a[1] for a in analisis], index=df.index),
+            errors="coerce",
+        )
+    else:
+        horas_pending = pd.Series(0.0, index=df.index)
+        fecha_cogido = pd.Series(pd.NaT, index=df.index)
+
+    df["horas_pending_info"] = horas_pending.round(2)
+    df["fecha_cogido"] = fecha_cogido
+
+    df["horas_resolucion"] = (
+        (fecha_resolucion - fecha_creacion).dt.total_seconds() / 3600 - horas_pending
+    )
+    df.loc[fecha_resolucion.isna() | fecha_creacion.isna(), "horas_resolucion"] = np.nan
+    df["horas_resolucion"] = df["horas_resolucion"].round(2)
+
+    df["dias_resolucion"] = df["horas_resolucion"] / 24
+
     df["horas_transcurridas"] = (
-        (fecha_fin - fecha_creacion).dt.total_seconds() / 3600
-    ).round(2)
+        (fecha_fin - fecha_creacion).dt.total_seconds() / 3600 - horas_pending
+    )
     df.loc[fecha_creacion.isna(), "horas_transcurridas"] = np.nan
+    df["horas_transcurridas"] = df["horas_transcurridas"].round(2)
     df["dias_abierto"] = np.floor(df["horas_transcurridas"] / 24)
+
+    # Tiempo de trabajo real: desde que se "cogio" el ticket (sale de
+    # Backlog) hasta que se resuelve/ahora, descontando tambien el tiempo
+    # en Pending Info (esperar info del cliente no cuenta como trabajo,
+    # ni desde la creacion ni desde que se coge).
+    horas_trabajo_real = pd.Series(np.nan, index=df.index, dtype="float64")
+    tiene_fecha_cogido = fecha_cogido.notna()
+    horas_trabajo_real.loc[tiene_fecha_cogido] = (
+        (fecha_fin.loc[tiene_fecha_cogido] - fecha_cogido.loc[tiene_fecha_cogido]).dt.total_seconds() / 3600
+        - horas_pending.loc[tiene_fecha_cogido]
+    )
+    df["horas_trabajo_real"] = horas_trabajo_real.round(2)
 
     return df
 
