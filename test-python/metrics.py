@@ -208,7 +208,9 @@ def calculate_top_clients(df):
         data.groupby("cliente", dropna=False)
         .agg(
             tickets=("ticket_id", "nunique"),
-            dominios=("cliente_domain", lambda values: ", ".join(sorted(set(values.dropna())))),
+            # astype(str) antes de ordenar/unir: un dominio que llegue como
+            # numero o cualquier otro tipo haria fallar sorted()/join().
+            dominios=("cliente_domain", lambda values: ", ".join(sorted(set(values.dropna().astype(str))))),
             sla=("sla_global_cumple", "mean"),
             tiempo_horas=("horas_resolucion", "mean"),
             tickets_sin_tiempo=("horas_resolucion", lambda values: int(values.isna().sum())),
@@ -317,6 +319,9 @@ def calculate_client_ticket_detail(df, cliente):
         "horas_resolucion",
         "horas_pending_info",
         "horas_trabajo_real",
+        "presupuesto_cliente",
+        "desviacion_presupuesto",
+        "consumo_presupuesto",
         "presupuesto",
         "diferencia_horas",
         "sla_prioridad_cumple",

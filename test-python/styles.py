@@ -689,6 +689,101 @@ table tbody tr:hover {
 }
 
 
+/* ---------- Timeline de ultimos cambios e historial de busquedas ---------- */
+.timeline {
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    background: var(--surface);
+    padding: 0.9rem 1.05rem 0.5rem;
+    box-shadow: var(--shadow);
+}
+
+.tl-caption {
+    color: var(--muted);
+    font-size: 0.74rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin-bottom: 0.7rem;
+}
+
+.timeline ul {
+    list-style: none;
+    margin: 0;
+    padding: 0 0 0 1rem;
+    border-left: 1px solid var(--line);
+}
+
+.tl-item {
+    position: relative;
+    padding: 0 0 0.9rem 0.85rem;
+}
+
+.tl-item::before {
+    content: "";
+    position: absolute;
+    left: -1.32rem;
+    top: 0.38rem;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--muted);
+    border: 2px solid var(--surface);
+}
+
+.tl-item.aprobado::before { background: var(--success); }
+.tl-item.rechazado::before { background: var(--danger); }
+.tl-item.pendiente::before { background: var(--warning); }
+
+.tl-head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.tl-title {
+    color: var(--ink);
+    font-size: 0.86rem;
+    font-weight: 700;
+}
+
+.tl-chip {
+    font-size: 0.66rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 0.1rem 0.45rem;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    color: var(--muted);
+}
+
+.tl-chip.aprobado { color: var(--success); border-color: rgba(66, 211, 146, 0.45); background: rgba(66, 211, 146, 0.12); }
+.tl-chip.rechazado { color: var(--danger); border-color: rgba(255, 107, 107, 0.45); background: rgba(255, 107, 107, 0.12); }
+.tl-chip.pendiente { color: var(--warning); border-color: rgba(245, 184, 75, 0.45); background: rgba(245, 184, 75, 0.12); }
+
+.tl-body {
+    color: var(--ink-soft);
+    font-size: 0.82rem;
+    margin-top: 0.2rem;
+}
+
+.tl-meta {
+    color: var(--muted);
+    font-size: 0.72rem;
+    margin-top: 0.15rem;
+}
+
+.tl-empty {
+    border: 1px dashed var(--line);
+    border-radius: 4px;
+    color: var(--muted);
+    font-size: 0.82rem;
+    padding: 0.9rem 1rem;
+    background: var(--surface-soft);
+}
+
 </style>
 """
 

@@ -18,13 +18,16 @@ from datetime import datetime, timedelta
 import streamlit as st
 
 import busqueda
+import config
+import historial
 import solicitudes
 from auth import check_clientes_authentication, render_logout_button
 from data import apply_filters, render_filters, validate_columns
 from metrics import apply_resolution_hour_overrides
 from periodos import PERIODOS, available_years, resolve_query_dates
 from process import cargar_tickets_jira
-from clientes_ui import render_detalle_cliente, render_ranking_clientes
+from clientes_ui import render_detalle_cliente, render_historico_cambios, render_ranking_clientes
+from ui_components import render_hero_header, section_title
 
 
 # =========================
@@ -110,6 +113,16 @@ if filtered.empty:
 
 
 # =========================
+# CABECERA
+# =========================
+render_hero_header(
+    title="Clientes — horas contratadas y consumo",
+    description="Ranking de clientes, detalle ticket a ticket y control del presupuesto frente al tiempo de desarrollo.",
+    timestamp=datetime.now().strftime(config.DATE_FORMAT),
+)
+
+
+# =========================
 # BUSQUEDA DE TICKET Y DE CLIENTE
 # =========================
 # Filtra las dos pestañas a la vez. El ticket elegido enseña ademas su
@@ -127,10 +140,21 @@ if filtered.empty:
 # =========================
 # PESTAÑAS PRINCIPALES
 # =========================
-tabs = st.tabs(["📊 Ranking de clientes", "🔍 Detalle por cliente"])
+tabs = st.tabs(["📊 Ranking de clientes", "🔍 Detalle por cliente", "📜 Historial de cambios"])
 
 with tabs[0]:
     render_ranking_clientes(filtered, role=role)
 
 with tabs[1]:
     render_detalle_cliente(filtered, role)
+
+with tabs[2]:
+    section_title(
+        "📜 Historial de cambios",
+        "Cambios de horas y de limite pedidos sobre cualquier cliente, de lo mas reciente a lo mas antiguo.",
+    )
+    col_timeline, col_tabla = st.columns([1, 1.6])
+    with col_timeline:
+        historial.render_cambios_recientes(limite=8, titulo="Lo ultimo")
+    with col_tabla:
+        render_historico_cambios()

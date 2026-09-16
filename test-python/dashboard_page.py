@@ -9,6 +9,7 @@ import streamlit as st
 
 import busqueda
 import config
+import historial
 from auth import check_authentication, render_logout_button
 from bono import detectar_bonos_sin_cliente
 from process import leer_config_jira
@@ -41,6 +42,7 @@ import solicitudes
 from clientes_ui import (
     render_detalle_cliente,
     render_historico_cambios,
+    render_presupuesto_global,
     render_ranking_clientes,
     render_solicitudes_pendientes,
 )
@@ -106,12 +108,20 @@ if pendientes_count:
 # =========================
 # HISTÓRICO DE CAMBIOS DE HORAS Y LÍMITES (solo Web Admin)
 # =========================
+# Plegado por defecto: es un registro para consultar de vez en cuando, y
+# abierto se comia la primera pantalla del dashboard.
 if role == "admin":
-    section_title(
-        "📜 Histórico de cambios de horas y límites",
-        "Todas las solicitudes ya resueltas (aprobadas o rechazadas), de cualquier cliente, con quién las pidió y quién las revisó.",
-    )
-    render_historico_cambios()
+    resueltas_count = solicitudes.contar_resueltas()
+    with st.expander(f"📜 Histórico de cambios de horas y límites ({resueltas_count})", expanded=False):
+        st.caption(
+            "Todas las solicitudes ya resueltas (aprobadas o rechazadas), de cualquier cliente, "
+            "con quién las pidió y quién las revisó."
+        )
+        col_timeline, col_tabla = st.columns([1, 1.6])
+        with col_timeline:
+            historial.render_cambios_recientes(limite=8, titulo="Lo ultimo")
+        with col_tabla:
+            render_historico_cambios()
 
 
 # =========================
@@ -541,6 +551,12 @@ if not ranking.empty:
     )
 else:
     empty_state("No hay técnicos con datos para los filtros seleccionados.")
+
+
+# =========================
+# PRESUPUESTO DE CLIENTE VS TIEMPO DE DESARROLLO
+# =========================
+render_presupuesto_global(filtered)
 
 
 # =========================

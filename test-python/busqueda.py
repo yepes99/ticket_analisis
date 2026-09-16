@@ -18,6 +18,7 @@ from html import escape
 import pandas as pd
 import streamlit as st
 
+import historial
 from config import PROJECT_KEY
 from process import cargar_tickets_jira
 from ui_components import kpi_grid, section_title
@@ -94,13 +95,52 @@ def _limpiar_busqueda(key_prefix):
     st.session_state[f"{key_prefix}busqueda_cliente"] = None
 
 
+def _repetir_busqueda(key_prefix, tipo):
+    """
+    Lleva la pastilla pulsada al desplegable correspondiente y deja la
+    propia pastilla sin seleccionar (es un atajo, no un filtro aparte).
+    """
+    clave_pastillas = f"{key_prefix}recientes_{tipo}"
+    valor = st.session_state.get(clave_pastillas)
+    if valor:
+        st.session_state[f"{key_prefix}busqueda_{tipo}"] = valor
+    st.session_state[clave_pastillas] = None
+
+
+def _render_recientes(contenedor, key_prefix, tipo, actual, etiqueta_func=str):
+    """
+    Pastillas con las ultimas busquedas de ese tipo, para repetirlas de un
+    clic. Se omite la que ya esta seleccionada (repetirla no haria nada).
+    """
+    recientes = [v for v in historial.busquedas_recientes(tipo) if v != actual]
+    if not recientes:
+        return
+
+    contenedor.pills(
+        f"Ultimas busquedas de {tipo}",
+        options=recientes,
+        selection_mode="single",
+        default=None,
+        format_func=etiqueta_func,
+        key=f"{key_prefix}recientes_{tipo}",
+        on_change=_repetir_busqueda,
+        args=(key_prefix, tipo),
+    )
+
+
 def render_panel_busqueda(df, key_prefix=""):
     """
     Desplegable con el buscador de tickets y el de clientes.
     Devuelve (ticket, cliente); cada uno None si no se ha elegido nada.
     """
     etiquetas = _etiquetas_tickets(df)
-    clientes = sorted(df["cliente"].dropna().unique().tolist()) if "cliente" in df.columns else []
+    # astype(str) antes de ordenar: si una fila trae un valor no textual en
+    # 'cliente', sorted() sobre tipos mezclados reventaria.
+    clientes = (
+        sorted(df["cliente"].dropna().astype(str).unique().tolist())
+        if "cliente" in df.columns
+        else []
+    )
 
     with st.expander("🔎 Buscar ticket o cliente", expanded=False):
         col_ticket, col_cliente = st.columns(2)
@@ -128,6 +168,9 @@ def render_panel_busqueda(df, key_prefix=""):
             help="Deja toda la pagina filtrada por ese cliente.",
         )
 
+        _render_recientes(col_ticket, key_prefix, "ticket", ticket, lambda v: normalizar_clave(v) or str(v))
+        _render_recientes(col_cliente, key_prefix, "cliente", cliente)
+
         if ticket or cliente:
             # Va por callback: el estado de un widget no se puede tocar una vez
             # instanciado, pero si antes del rerun que dispara el boton.
@@ -137,6 +180,11 @@ def render_panel_busqueda(df, key_prefix=""):
                 on_click=_limpiar_busqueda,
                 args=(key_prefix,),
             )
+
+    # Se apuntan despues de pintar las pastillas para que la busqueda actual
+    # no salga tambien como "reciente" en la misma pasada.
+    historial.registrar_busqueda("ticket", ticket)
+    historial.registrar_busqueda("cliente", cliente)
 
     return ticket, cliente
 

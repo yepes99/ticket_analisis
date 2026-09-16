@@ -59,6 +59,13 @@ JIRA_FIELD_ALIASES = {
         "Budget",
         "Campo personalizado (Budget)",
     ],
+    # Estimacion en horas que pone el desarrollador para el ticket. Es un
+    # campo distinto de "Budget" y se compara con el tiempo de desarrollo
+    # real (horas_trabajo_real), no con el tiempo transcurrido.
+    "presupuesto_cliente": [
+        "Presupuesto cliente (en horas)",
+        "Campo personalizado (Presupuesto cliente (en horas))",
+    ],
     "plan_servicio": [
         "Plan",
     ],
@@ -90,6 +97,7 @@ JIRA_COLUMNS = [
     "cliente_empresa",
     "size",
     "presupuesto",
+    "presupuesto_cliente",
     "plan_servicio",
     "tipo_producto",
     "es_wordpress",
@@ -648,6 +656,11 @@ def transformar_payload_jira(payload):
                     field_map.get("presupuesto"),
                 ),
 
+                "presupuesto_cliente": extraer_valor_campo_jira(
+                    fields,
+                    field_map.get("presupuesto_cliente"),
+                ),
+
                 "plan_servicio": extraer_valor_campo_jira(
                     fields,
                     field_map.get("plan_servicio"),
@@ -681,6 +694,11 @@ def transformar_payload_jira(payload):
 
     df["presupuesto"] = pd.to_numeric(
         df["presupuesto"],
+        errors="coerce",
+    )
+
+    df["presupuesto_cliente"] = pd.to_numeric(
+        df["presupuesto_cliente"],
         errors="coerce",
     )
 

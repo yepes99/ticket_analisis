@@ -15,7 +15,9 @@ import streamlit.column_config as stcc
 
 import bono
 import config
+import historial
 import limites
+import presupuesto as presu
 import solicitudes
 from charts import create_top_clients_chart
 from metrics import calculate_client_ticket_detail, calculate_top_clients
@@ -109,6 +111,50 @@ CABECERA_ALTO_PX = 70
 FILA_ALTO_PX = 36
 
 
+def _horas_o_guion(serie, index, con_signo=False):
+    """
+    "6.0 h" / "+2.0 h" para un numero y "—" cuando falta. Sirve para las
+    columnas que casi siempre vienen vacias: en una columna numerica un
+    hueco se pinta como un "None" gris, que ensucia la tabla entera.
+    """
+    if serie is None:
+        return pd.Series("—", index=index)
+
+    valores = pd.to_numeric(serie, errors="coerce")
+    formato = "{:+.1f} h" if con_signo else "{:.1f} h"
+    return valores.map(lambda v: "—" if pd.isna(v) else formato.format(v))
+
+
+# Tipos de columna de Streamlit que exigen un valor numerico de verdad.
+_TIPOS_NUMERICOS = {"number", "progress"}
+
+
+def _sanear_para_mostrar(df, column_config):
+    """
+    Deja el DataFrame listo para enseñarlo en una tabla, sin "None" sueltos.
+
+    Un None de Python en una columna de tipo object se renderiza como el
+    texto literal "None"; y si la columna esta declarada como numerica en
+    el column_config, ademas descuadra el formato. Aqui las numericas se
+    pasan a numero (los huecos quedan como NaN, que se ve como celda
+    vacia) y las de texto se rellenan con cadena vacia.
+    """
+    tabla = df.copy()
+    for columna in tabla.columns:
+        # Los helpers de column_config (NumberColumn, TextColumn...) no son
+        # clases, devuelven un dict; el tipo se mira dentro de 'type_config'.
+        config = column_config.get(columna)
+        tipo = config.get("type_config", {}).get("type") if isinstance(config, dict) else None
+
+        if tipo in _TIPOS_NUMERICOS:
+            tabla[columna] = pd.to_numeric(tabla[columna], errors="coerce")
+        elif pd.api.types.is_string_dtype(tabla[columna]) or tabla[columna].dtype == "object":
+            # En pandas 3 una columna de texto puede venir como dtype 'str',
+            # 'string' u 'object'; is_string_dtype las cubre todas.
+            tabla[columna] = tabla[columna].fillna("")
+    return tabla
+
+
 def _alto_tabla_completa(n_filas, max_filas=None):
     """
     Alto exacto (cabecera + N filas completas, nunca una fila a medias)
@@ -198,6 +244,57 @@ def _estilo_ranking(row):
 
     return estilos
 
+
+TICKETS_COLUMN_CONFIG = {
+    "ticket_id": "Ticket",
+    "cliente_nombre": "Cliente",
+    "cliente_domain": "Domain",
+    "cliente_url": stcc.LinkColumn("URL", display_text="Abrir URL"),
+    "resumen": stcc.TextColumn("Descripcion", width="large"),
+    "tipo": "Tipo de incidencia",
+    "plan_servicio": "Plan",
+    "tipo_producto": "Tipo",
+    "estado": "Estado",
+    "prioridad": "Prioridad",
+    "size": "Tamaño",
+    "asignado_a": "Tecnico",
+    "fecha_creacion": stcc.DatetimeColumn("Creado", format="DD/MM/YYYY"),
+    "fecha_resolucion": stcc.DatetimeColumn("Resuelto", format="DD/MM/YYYY"),
+    "horas_resolucion": stcc.NumberColumn(
+        "Horas resolucion", format="%.1f h",
+        help="Desde creacion hasta Finalizada, sin contar el tiempo en Pending Info.",
+    ),
+    "horas_pending_info": stcc.NumberColumn("Horas Pending Info", format="%.1f h"),
+    "horas_trabajo_real": stcc.NumberColumn(
+        "Horas trabajo real", format="%.1f h",
+        help="Tiempo de desarrollo: desde que se coge el ticket (sale de Backlog) hasta Finalizada/ahora, sin el tiempo en Pending Info.",
+    ),
+    # Como texto y no como numero a proposito: hoy casi ningun ticket lleva
+    # presupuesto, y una celda numerica vacia se pinta con un "None" gris
+    # (marcador propio de Streamlit, no se puede cambiar por columna). Con
+    # texto se controla y sale un guion, como en el resto de la app.
+    "presupuesto_cliente": stcc.TextColumn(
+        "Presupuesto cliente",
+        help="Campo de Jira 'Presupuesto cliente (en horas)': las horas que el desarrollador estima que le va a costar el ticket.",
+    ),
+    "desviacion_presupuesto": stcc.TextColumn(
+        "Desviacion",
+        help="Horas de trabajo real por encima (+) o por debajo (-) de lo estimado.",
+    ),
+    "presupuesto": stcc.NumberColumn("Budget (antiguo)", format="%.1f h"),
+    "diferencia_horas": stcc.NumberColumn("Dif. Budget", format="%.1f h"),
+}
+
+# Orden fijo, de lo mas util a lo mas accesorio. Sin esto la tabla enseñaba
+# tambien columnas internas sin etiqueta (consumo_presupuesto, los
+# sla_*_cumple, dias_resolucion...), que es lo que la hacia ilegible.
+TICKETS_COLUMN_ORDER = [
+    "ticket_id", "resumen", "estado", "prioridad", "size", "asignado_a",
+    "fecha_creacion", "fecha_resolucion",
+    "horas_resolucion", "horas_trabajo_real", "horas_pending_info",
+    "presupuesto_cliente", "desviacion_presupuesto",
+    "plan_servicio", "tipo_producto", "tipo", "cliente_url",
+]
 
 # Roles con vista simplificada: sin el grafico (no les aporta, solo la
 # tabla les interesa) y a ancho completo para que la tabla sea mas grande
@@ -301,7 +398,9 @@ def render_detalle_cliente(filtered, role, key_prefix=""):
         "Selecciona un cliente para ver sus tareas, su tiempo de resolucion y el consumo frente al limite de horas contratado.",
     )
 
-    clientes_disponibles = sorted(filtered["cliente"].dropna().unique().tolist())
+    # astype(str): si una fila trae un valor no textual en 'cliente',
+    # sorted() sobre tipos mezclados reventaria.
+    clientes_disponibles = sorted(filtered["cliente"].dropna().astype(str).unique().tolist())
 
     cliente_seleccionado = st.selectbox(
         "Selecciona un cliente para ver su detalle",
@@ -381,26 +480,50 @@ def render_detalle_cliente(filtered, role, key_prefix=""):
         ]
     )
 
-    if not bono_info["compras"].empty:
-        with st.expander(f"🎟️ Compras de bono detectadas ({len(bono_info['compras'])})", expanded=False):
-            st.caption(
-                "Tickets cuya descripcion contiene un texto de compra de bono "
-                "(ej. \"Tipo de tarea: 10h web changes bundle\")."
-            )
-            st.dataframe(
-                bono_info["compras"],
-                width="stretch",
-                hide_index=True,
-                height=_alto_tabla_completa(len(bono_info["compras"]), max_filas=8),
-                column_config={
-                    "ticket_id": "Ticket",
-                    "fecha_creacion": stcc.DatetimeColumn("Fecha", format="DD/MM/YYYY"),
-                    "bono_horas_compradas": stcc.NumberColumn("Horas compradas", format="%.1f h"),
-                },
+    # El resto del detalle va en pestañas en vez de apilado: antes eran dos
+    # secciones y tres desplegables seguidos y habia que bajar mucho para
+    # llegar a la tabla de tickets.
+    nombres_tabs = ["🎟️ Bono y cambios", "💶 Presupuesto", "📋 Tickets"]
+    if puede_gestionar:
+        nombres_tabs.append("⚙️ Gestionar")
+    tabs_detalle = st.tabs(nombres_tabs)
+
+    with tabs_detalle[0]:
+        col_bono, col_cambios = st.columns(2)
+        with col_bono:
+            if bono_info["compras"].empty:
+                empty_state(
+                    "Sin compras de bono detectadas para este cliente. Se detectan por la "
+                    "descripcion del ticket (ej. \"Tipo de tarea: 10h web changes bundle\")."
+                )
+            else:
+                st.caption(f"Compras de bono detectadas ({len(bono_info['compras'])})")
+                st.dataframe(
+                    bono_info["compras"],
+                    width="stretch",
+                    hide_index=True,
+                    height=_alto_tabla_completa(len(bono_info["compras"]), max_filas=8),
+                    column_config={
+                        "ticket_id": "Ticket",
+                        "fecha_creacion": stcc.DatetimeColumn("Fecha", format="DD/MM/YYYY"),
+                        "bono_horas_compradas": stcc.NumberColumn("Horas compradas", format="%.1f h"),
+                    },
+                )
+        with col_cambios:
+            historial.render_cambios_recientes(
+                limite=6,
+                cliente=cliente_seleccionado,
+                titulo=f"Ultimos cambios · {cliente_seleccionado}",
             )
 
+    with tabs_detalle[1]:
+        render_presupuesto_cliente(detalle_df, cliente_seleccionado)
+
+    with tabs_detalle[2]:
+        render_tickets_cliente(detalle_df, cliente_seleccionado, vista_resumida)
+
     if puede_gestionar:
-        with st.expander("⚙️ Gestionar horas y limite", expanded=False):
+        with tabs_detalle[3]:
             if is_admin:
                 st.caption("Como Web Admin, tus propias solicitudes tambien quedan pendientes hasta que las apruebes en 'Solicitudes pendientes'.")
             else:
@@ -459,11 +582,13 @@ def render_detalle_cliente(filtered, role, key_prefix=""):
                     )
                     st.success("Solicitud enviada. Un Web Admin debe aprobarla.")
 
-                historial = limites.obtener_historial(cliente_seleccionado)
-                if historial:
+                # 'historial_limite', no 'historial': ese nombre es el del
+                # modulo de historial que se usa mas arriba en esta funcion.
+                historial_limite = limites.obtener_historial(cliente_seleccionado)
+                if historial_limite:
                     st.caption("Historico de cambios del limite")
                     st.dataframe(
-                        pd.DataFrame(historial),
+                        pd.DataFrame(historial_limite),
                         width="stretch",
                         hide_index=True,
                         column_config={
@@ -476,70 +601,190 @@ def render_detalle_cliente(filtered, role, key_prefix=""):
 
             render_solicitudes_cliente(cliente_seleccionado)
 
-    section_title(
-        f"📋 Historial de tareas · {cliente_seleccionado}",
-        "Detalle ticket a ticket, ordenado de mas reciente a mas antigua.",
+
+PRESUPUESTO_COLUMN_CONFIG = {
+    "ticket_id": "Ticket",
+    "resumen": stcc.TextColumn("Descripcion", width="large"),
+    "estado": "Estado",
+    "asignado_a": "Tecnico",
+    "presupuesto_cliente": stcc.NumberColumn("Horas estimadas", format="%.1f h"),
+    "horas_trabajo_real": stcc.NumberColumn("Desarrollo real", format="%.1f h"),
+    "desviacion_presupuesto": stcc.NumberColumn("Desviacion", format="%+.1f h"),
+    "estado_presupuesto": stcc.TextColumn("Acierto de la estimacion", width="medium"),
+}
+
+PRESUPUESTO_COLUMN_ORDER = [
+    "ticket_id", "resumen", "estado", "asignado_a",
+    "presupuesto_cliente", "horas_trabajo_real", "desviacion_presupuesto", "estado_presupuesto",
+]
+
+
+def _tabla_presupuesto_formateada(tabla):
+    """Añade la celda de estado (icono + mensaje) a la tabla de presupuestos."""
+    formateada = tabla.copy()
+    estados = formateada.apply(
+        lambda fila: presu.presupuesto_tono(fila.get("presupuesto_cliente"), fila.get("horas_trabajo_real")),
+        axis=1,
+    )
+    formateada["_tono"] = [tono for tono, _, _ in estados]
+    formateada["estado_presupuesto"] = [f"{icono} {mensaje}" for _, icono, mensaje in estados]
+    return formateada
+
+
+def _estilo_presupuesto(row):
+    color = TONO_CELDA.get(row.get("_tono"), "")
+    estilos = ["" for _ in row.index]
+    for columna in ("desviacion_presupuesto", "estado_presupuesto"):
+        if columna in row.index:
+            estilos[row.index.get_loc(columna)] = color
+    return estilos
+
+
+def render_presupuesto_cliente(detalle_df, cliente_seleccionado):
+    """
+    Horas estimadas por el desarrollador (campo de Jira "Presupuesto
+    cliente (en horas)") frente al tiempo de desarrollo real de cada ticket.
+    """
+    tabla = presu.tickets_con_presupuesto(detalle_df)
+    resumen = presu.resumen_presupuesto(detalle_df)
+
+    if tabla.empty:
+        empty_state(
+            f"Ningun ticket de {cliente_seleccionado} lleva relleno el campo "
+            "\"Presupuesto cliente (en horas)\" en Jira. En cuanto el desarrollador lo estime, "
+            "aqui se compara con las horas de desarrollo real de cada ticket."
+        )
+        return
+
+    dentro_tono = "success" if resumen["pasados"] == 0 else ("warning" if resumen["horas_exceso"] <= 5 else "danger")
+    kpi_grid(
+        [
+            ("Tickets estimados", str(resumen["con_presupuesto"]), "Con el campo relleno en Jira", ""),
+            ("Horas estimadas", f"{resumen['horas_estimadas']:.1f} h", "Suma de las estimaciones", ""),
+            ("Desarrollo real", f"{resumen['horas_desarrollo']:.1f} h", "Suma del tiempo de desarrollo", ""),
+            (
+                "Horas de mas",
+                f"{resumen['horas_exceso']:.1f} h",
+                f"{resumen['pasados']} ticket(s) por encima de lo estimado",
+                _kpi_tone(dentro_tono),
+            ),
+        ]
     )
 
+    st.caption(
+        "Se compara la estimacion con las **horas de trabajo real** (desde que un tecnico coge "
+        "el ticket hasta que lo termina, sin el tiempo en Pending Info), no con el tiempo total desde "
+        "que se creo: ese incluye la espera en Backlog, que no es desarrollo."
+    )
+
+    formateada = _sanear_para_mostrar(_tabla_presupuesto_formateada(tabla), PRESUPUESTO_COLUMN_CONFIG)
+    st.dataframe(
+        formateada.style.apply(_estilo_presupuesto, axis=1),
+        width="stretch",
+        hide_index=True,
+        height=_alto_tabla_completa(len(formateada), max_filas=12),
+        lazy=False,
+        column_config=PRESUPUESTO_COLUMN_CONFIG,
+        column_order=[c for c in PRESUPUESTO_COLUMN_ORDER if c in formateada.columns],
+    )
+
+
+def render_presupuesto_global(df):
+    """
+    Mismo bloque de presupuesto que en el detalle de cliente, pero para
+    todos los tickets del periodo y con la columna de cliente a la vista.
+    """
+    section_title(
+        "💶 Estimacion vs. tiempo de desarrollo real",
+        "Horas que el desarrollador estimo para el ticket (campo de Jira \"Presupuesto cliente (en horas)\") "
+        "frente a las horas de trabajo real que ha costado.",
+    )
+
+    tabla = presu.tickets_con_presupuesto(df)
+    if tabla.empty:
+        empty_state(
+            "Ningun ticket del periodo lleva relleno el campo \"Presupuesto cliente (en horas)\" en Jira."
+        )
+        return
+
+    resumen = presu.resumen_presupuesto(df)
+    dentro_tono = "success" if resumen["pasados"] == 0 else ("warning" if resumen["horas_exceso"] <= 5 else "danger")
+    kpi_grid(
+        [
+            ("Tickets estimados", str(resumen["con_presupuesto"]), "Con el campo relleno en Jira", ""),
+            ("Horas estimadas", f"{resumen['horas_estimadas']:.1f} h", "Suma de las estimaciones", ""),
+            ("Desarrollo real", f"{resumen['horas_desarrollo']:.1f} h", "Suma del tiempo de desarrollo", ""),
+            (
+                "Horas de mas",
+                f"{resumen['horas_exceso']:.1f} h",
+                f"{resumen['pasados']} ticket(s) por encima de lo estimado",
+                _kpi_tone(dentro_tono),
+            ),
+        ]
+    )
+
+    formateada = _sanear_para_mostrar(_tabla_presupuesto_formateada(tabla), PRESUPUESTO_COLUMN_CONFIG)
+    orden = ["ticket_id", "cliente"] + [c for c in PRESUPUESTO_COLUMN_ORDER if c not in ("ticket_id",)]
+    st.dataframe(
+        formateada.style.apply(_estilo_presupuesto, axis=1),
+        width="stretch",
+        hide_index=True,
+        height=_alto_tabla_completa(len(formateada), max_filas=12),
+        lazy=False,
+        column_config={**PRESUPUESTO_COLUMN_CONFIG, "cliente": stcc.TextColumn("Cliente", width="medium")},
+        column_order=[c for c in dict.fromkeys(orden) if c in formateada.columns],
+    )
+
+
+def render_tickets_cliente(detalle_df, cliente_seleccionado, vista_resumida):
+    """Tabla ticket a ticket del cliente, de mas reciente a mas antigua."""
     if vista_resumida:
         empty_state(
             "Vista resumida para Customer Success: horas, presupuesto y estado ya se muestran arriba. "
             "El detalle tecnico de cada ticket no esta disponible en este rol."
         )
-    elif not detalle_df.empty:
-        st.caption(
-            "\"Presupuesto\" es el campo Budget de Jira; cuando las horas consumidas de un ticket lo superan "
-            "en mas de 8h la fila se marca en naranja, y en mas de 10h en rojo."
-        )
+        return
 
-        def highlight_diferencia_horas(row):
-            diff = pd.to_numeric(row.get("diferencia_horas"), errors="coerce")
-            if pd.isna(diff):
-                color = ""
-            elif diff > 10:
-                color = f"background-color: {config.COLOR_VARS['--danger']}; color: #fff"
-            elif diff > 8:
-                color = f"background-color: {config.COLOR_VARS['--warning']}; color: #080d14"
-            else:
-                color = ""
-            return [color for _ in row]
-
-        # Solo para mostrar: celdas de texto vacias en vez de <NA>, que el
-        # widget de tabla de Streamlit renderiza como el texto literal "None".
-        tabla_historial = detalle_df.copy()
-        for col in ("plan_servicio", "tipo_producto"):
-            if col in tabla_historial.columns:
-                tabla_historial[col] = tabla_historial[col].fillna("")
-
-        st.dataframe(
-            tabla_historial.style.apply(highlight_diferencia_horas, axis=1),
-            width="stretch",
-            hide_index=True,
-            height=_alto_tabla_completa(len(tabla_historial), max_filas=15),
-            column_config={
-                "ticket_id": "Ticket",
-                "cliente_nombre": "Cliente",
-                "cliente_domain": "Domain",
-                "cliente_url": stcc.LinkColumn("URL", display_text="Abrir URL"),
-                "resumen": stcc.TextColumn("Descripcion", width="large"),
-                "tipo": "Tipo de incidencia",
-                "plan_servicio": "Plan",
-                "tipo_producto": "Tipo",
-                "estado": "Estado",
-                "prioridad": "Prioridad",
-                "size": "Tamaño",
-                "asignado_a": "Tecnico",
-                "fecha_creacion": stcc.DatetimeColumn("Creado", format="DD/MM/YYYY"),
-                "fecha_resolucion": stcc.DatetimeColumn("Resuelto", format="DD/MM/YYYY"),
-                "horas_resolucion": stcc.NumberColumn("Horas resolucion", format="%.1f h", help="Desde creacion hasta Finalizada, sin contar el tiempo en Pending Info."),
-                "horas_pending_info": stcc.NumberColumn("Horas Pending Info", format="%.1f h"),
-                "horas_trabajo_real": stcc.NumberColumn("Horas trabajo real", format="%.1f h", help="Desde que se coge el ticket (sale de Backlog) hasta Finalizada/ahora."),
-                "presupuesto": stcc.NumberColumn("Presupuesto", format="%.1f h"),
-                "diferencia_horas": stcc.NumberColumn("Diferencia", format="%.1f h"),
-            },
-        )
-    else:
+    if detalle_df.empty:
         empty_state(f"No hay tareas para {cliente_seleccionado}.")
+        return
+
+    st.caption(
+        "\"Presupuesto cliente\" son las horas que estimo el desarrollador y se comparan con las "
+        "**horas de trabajo real**; la fila se pinta en naranja al pasarse de la estimacion y en rojo "
+        "si se pasa mas de un 25%."
+    )
+
+    # El tono se calcula con los valores numericos de origen, antes de
+    # formatear el presupuesto a texto (si no, "6.0 h" ya no es un numero).
+    tabla_historial = detalle_df.copy()
+    tonos = tabla_historial.apply(
+        lambda fila: presu.presupuesto_tono(fila.get("presupuesto_cliente"), fila.get("horas_trabajo_real"))[0],
+        axis=1,
+    ) if not tabla_historial.empty else pd.Series(dtype="object")
+
+    tabla_historial["presupuesto_cliente"] = _horas_o_guion(tabla_historial.get("presupuesto_cliente"), tabla_historial.index)
+    tabla_historial["desviacion_presupuesto"] = _horas_o_guion(
+        tabla_historial.get("desviacion_presupuesto"), tabla_historial.index, con_signo=True
+    )
+    tabla_historial = _sanear_para_mostrar(tabla_historial, TICKETS_COLUMN_CONFIG)
+    tabla_historial["_tono"] = tonos
+
+    def highlight_presupuesto(row):
+        # Solo se pinta lo que se ha pasado de presupuesto; lo que va bien se
+        # deja limpio para que destaque lo que hay que mirar.
+        color = TONO_CELDA.get(row.get("_tono"), "") if row.get("_tono") != "success" else ""
+        return [color for _ in row]
+
+    st.dataframe(
+        tabla_historial.style.apply(highlight_presupuesto, axis=1),
+        width="stretch",
+        hide_index=True,
+        height=_alto_tabla_completa(len(tabla_historial), max_filas=15),
+        lazy=False,
+        column_config=TICKETS_COLUMN_CONFIG,
+        column_order=[c for c in TICKETS_COLUMN_ORDER if c in tabla_historial.columns],
+    )
 
 
 def render_solicitudes_pendientes():
@@ -558,8 +803,8 @@ def render_solicitudes_pendientes():
         with st.container(border=True):
             info_col, action_col = st.columns([4, 1.6])
             with info_col:
-                actual = solicitud["valor_actual"]
-                actual_label = f"{actual:.1f} h" if actual is not None else "sin dato"
+                actual_label = solicitudes.formatear_horas(solicitud.get("valor_actual"))
+                propuesto_label = solicitudes.formatear_horas(solicitud.get("valor_propuesto"), defecto="—")
                 if solicitud["tipo"] == "horas":
                     tipo_label = "🕒 Horas de resolucion"
                     objetivo_label = f"ticket **{solicitud['ticket_id']}** de {solicitud['cliente']}"
@@ -568,7 +813,7 @@ def render_solicitudes_pendientes():
                     objetivo_label = f"cliente **{solicitud['cliente']}**"
                 st.markdown(f"**{tipo_label}** — {objetivo_label}")
                 st.markdown(
-                    f"{actual_label} → **{solicitud['valor_propuesto']:.1f} h** "
+                    f"{actual_label} → **{propuesto_label}** "
                     f"&nbsp;·&nbsp; pedido por *{solicitud['solicitado_por']}*"
                 )
             with action_col:
@@ -609,8 +854,8 @@ def render_solicitudes_cliente(cliente):
     st.caption("Solicitudes de este cliente")
     for solicitud in todas:
         icono, etiqueta = ESTADO_BADGE.get(solicitud["estado"], ("⚪", solicitud["estado"]))
-        actual = solicitud["valor_actual"]
-        actual_label = f"{actual:.1f} h" if actual is not None else "sin dato"
+        actual_label = solicitudes.formatear_horas(solicitud.get("valor_actual"))
+        propuesto_label = solicitudes.formatear_horas(solicitud.get("valor_propuesto"), defecto="—")
         if solicitud["tipo"] == "horas":
             objetivo = f"horas del ticket **{solicitud['ticket_id']}**"
         else:
@@ -619,7 +864,7 @@ def render_solicitudes_cliente(cliente):
         if solicitud["estado"] != "pendiente" and solicitud.get("revisado_por"):
             detalle_revision = f" · revisado por {solicitud['revisado_por']}"
         st.markdown(
-            f"{icono} **{etiqueta}** — {objetivo}: {actual_label} → **{solicitud['valor_propuesto']:.1f} h** "
+            f"{icono} **{etiqueta}** — {objetivo}: {actual_label} → **{propuesto_label}** "
             f"(pedido por {solicitud['solicitado_por']}{detalle_revision})"
         )
 
@@ -637,35 +882,41 @@ def render_historico_cambios():
 
     resueltas = sorted(resueltas, key=lambda s: s.get("fecha_revision") or "", reverse=True)
 
-    filas = [
-        {
+    def _fila(s, para_excel):
+        # En pantalla las horas van como texto ("—" cuando no hay dato): una
+        # celda numerica vacia se pinta con un "None" gris. En el Excel van
+        # como numero, que es lo que sirve para sumar o filtrar alli.
+        antes, despues = s.get("valor_actual"), s.get("valor_propuesto")
+        if para_excel:
+            antes = antes if antes is not None else float("nan")
+            despues = despues if despues is not None else float("nan")
+        else:
+            antes = solicitudes.formatear_horas(antes, defecto="—")
+            despues = solicitudes.formatear_horas(despues, defecto="—")
+        return {
             "Fecha solicitud": s["fecha_solicitud"],
             "Fecha revision": s["fecha_revision"],
             "Tipo": "Horas" if s["tipo"] == "horas" else "Limite",
             "Cliente": s["cliente"],
             "Ticket": s["ticket_id"] or "-",
-            "Antes (h)": s["valor_actual"] if s["valor_actual"] is not None else float("nan"),
-            "Despues (h)": s["valor_propuesto"],
+            "Antes (h)": antes,
+            "Despues (h)": despues,
             "Solicitado por": s["solicitado_por"],
             "Revisado por": s["revisado_por"],
             "Estado": "Aprobado" if s["estado"] == "aprobado" else "Rechazado",
         }
-        for s in resueltas
-    ]
 
     st.dataframe(
-        filas,
+        [_fila(s, para_excel=False) for s in resueltas],
         width="stretch",
         hide_index=True,
-        column_config={
-            "Antes (h)": stcc.NumberColumn(format="%.1f h"),
-            "Despues (h)": stcc.NumberColumn(format="%.1f h"),
-        },
     )
 
     output = BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        pd.DataFrame(filas).to_excel(writer, sheet_name="Historico", index=False)
+        pd.DataFrame([_fila(s, para_excel=True) for s in resueltas]).to_excel(
+            writer, sheet_name="Historico", index=False
+        )
 
     st.download_button(
         "⬇️ Descargar histórico en Excel",

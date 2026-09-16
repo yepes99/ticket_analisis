@@ -17,17 +17,32 @@ Dashboard profesional en Streamlit para consultar tickets directamente desde Jir
 
 ```text
 test-python/
-- app.py
-- config.py
-- styles.py
-- ui_components.py
-- auth.py
-- data.py
-- process.py
-- sla.py
-- metrics.py
-- charts.py
-- report.py
+- app.py              # login y enrutado por rol
+- auth.py             # roles y permisos
+- config.py           # colores, constantes y config de pagina
+- styles.py           # CSS de la app
+- ui_components.py    # cabecera, tarjetas KPI, titulos de seccion
+
+- process.py          # consulta a Jira y transformacion de los tickets
+- cliente.py          # a que cliente pertenece cada ticket
+- categorias.py       # clasificacion de categorias
+- sla.py              # tiempos, SLA y presupuesto
+- bono.py             # bonos de horas y semaforo de saldo
+- limites.py          # limite de horas contratadas por cliente
+- presupuesto.py      # presupuesto de cliente vs. tiempo de desarrollo
+- solicitudes.py      # solicitudes de cambio de horas/limite
+- historial.py        # ultimas busquedas y ultimos cambios
+- busqueda.py         # panel de busqueda de ticket y cliente
+- metrics.py          # KPIs y agregados
+- data.py             # filtros de la barra lateral
+- periodos.py         # rangos de fecha
+- charts.py           # graficos
+- backlog_metrics.py  # metricas de backlog
+- report.py           # exportes a Excel y PDF
+
+- dashboard_page.py   # pagina Dashboard (Web Admin y Soporte)
+- clientes_page.py    # pagina Clientes (todos los roles)
+- clientes_ui.py      # bloques de UI de clientes, compartidos por las dos
 ```
 
 ## Instalacion
@@ -93,6 +108,45 @@ En la tabla del ranking de clientes se pintan con ese semaforo las columnas **Li
 `Clientes` → pestaña **Detalle por cliente** → elegir el cliente → desplegable **⚙️ Gestionar horas y limite** → pestaña **Cambiar limite del cliente** → escribir las horas y guardar.
 
 Guardar el limite crea una **solicitud** que un Web Admin tiene que aprobar desde el Dashboard (tambien las que crea el propio Web Admin: toda solicitud se aprueba a mano). Una vez aprobada, la fila del cliente ya sale con color en el ranking.
+
+## Estimacion vs. tiempo de desarrollo real
+
+Jira tiene un campo **"Presupuesto cliente (en horas)"** (`customfield_17136`): lo rellena el propio desarrollador con las horas que cree que le va a costar el ticket. Se compara con el **tiempo de desarrollo real**, para ver como de bien se estima.
+
+Los tiempos que calcula la app a partir del historial de estados de Jira son tres, y no significan lo mismo:
+
+| Columna | Que mide | Desde | Hasta |
+| --- | --- | --- | --- |
+| `horas_transcurridas` | Tiempo total de vida del ticket | Creacion | Resolucion (o ahora) |
+| `horas_resolucion` | Tiempo de respuesta al cliente | Creacion | Finalizada |
+| `horas_trabajo_real` | **Tiempo de desarrollo** | Sale de Backlog (un tecnico lo coge) | Finalizada (o ahora) |
+
+Las tres descuentan el tiempo que el ticket estuvo en *Pending Info* (esperar respuesta del cliente no es trabajo del equipo).
+
+La estimacion se compara con **`horas_trabajo_real`**, no con las otras dos: `horas_transcurridas` y `horas_resolucion` cuentan desde que se creo el ticket, asi que incluyen todo el rato que estuvo en Backlog sin que nadie lo tocara. Un ticket que espera dos semanas en cola y luego se hace en 3 h no se ha pasado de una estimacion de 4 h, pero con esas columnas lo pareceria.
+
+`desviacion_presupuesto = horas_trabajo_real - presupuesto_cliente`, con este semaforo:
+
+| Desarrollo real | Color |
+| --- | --- |
+| dentro de lo estimado | verde |
+| hasta un 25% por encima | naranja |
+| mas de un 25% por encima | rojo |
+
+Los umbrales estan en `sla.PRESUPUESTO_AVISO_RATIO` y `sla.PRESUPUESTO_GRAVE_RATIO`.
+
+Donde se ve:
+
+- **Dashboard** → seccion *"💶 Estimacion vs. tiempo de desarrollo real"*, con los totales del periodo y la lista de tickets estimados.
+- **Clientes** → *Detalle por cliente* → pestaña *💶 Presupuesto*, lo mismo pero de ese cliente.
+- **Clientes** → *Detalle por cliente* → pestaña *📋 Tickets*: columnas `Presupuesto cliente` y `Desviacion`, con la fila pintada cuando se ha pasado.
+
+> El campo antiguo **"Budget"** (`customfield_16862`) se sigue calculando (columnas `presupuesto` y `diferencia_horas`) pero ya no se enseña en la tabla: **no lo rellena nadie**, en los ultimos dos meses no habia ni un solo ticket con ese campo puesto. Para volver a verlo basta con añadir `"presupuesto"` y `"diferencia_horas"` a `clientes_ui.TICKETS_COLUMN_ORDER`.
+
+## Historial
+
+- **Ultimas busquedas**: al buscar un ticket o un cliente, el desplegable de busqueda guarda las ultimas 6 de cada tipo como botones. Un clic las repite. Son de la sesion de cada persona y no se guardan en disco.
+- **Ultimos cambios**: linea de tiempo con los ultimos cambios de horas y de limite, con su estado (pendiente / aprobado / rechazado), quien lo pidio o reviso y cuando. Esta en la pestaña *📜 Historial de cambios* de la pagina Clientes (global) y en *Detalle por cliente → 🎟️ Bono y cambios* (solo de ese cliente). El Web Admin la ve tambien arriba del Dashboard, junto a la tabla completa con descarga en Excel.
 
 ## Tests
 

@@ -281,18 +281,49 @@ def completar_sla_size(df):
     return df
 
 
+# Margen sobre la estimacion a partir del cual se avisa. Se mide en
+# porcentaje porque pasarse 2 h de una estimacion de 4 h no es lo mismo que
+# pasarse 2 h de una de 40 h.
+PRESUPUESTO_AVISO_RATIO = 1.0   # por encima de esto ya se ha pasado de lo estimado
+PRESUPUESTO_GRAVE_RATIO = 1.25  # mas de un 25% por encima: desviacion seria
+
+
 def completar_presupuesto(df):
     """
-    Compara las horas presupuestadas (campo Budget de Jira) con las horas
-    consumidas (tiempo transcurrido desde creacion, en curso o hasta resolucion).
+    Dos comparaciones distintas, con dos campos de Jira distintos:
+
+    - "Budget" (columna 'presupuesto') se compara con el tiempo transcurrido
+      desde que se creo el ticket ('horas_transcurridas'). Es la comparacion
+      antigua y se mantiene por compatibilidad.
+    - "Presupuesto cliente (en horas)" (columna 'presupuesto_cliente') lo
+      rellena el desarrollador con lo que cree que le va a costar el ticket,
+      y se compara con el tiempo de desarrollo real ('horas_trabajo_real'):
+      desde que coge el ticket hasta que lo termina, sin contar lo que
+      estuvo esperando informacion del cliente. Es la estimacion frente a lo
+      que de verdad ha costado hacerlo.
     """
     df = df.copy()
 
-    if "presupuesto" not in df.columns:
-        df["presupuesto"] = np.nan
-    df["presupuesto"] = pd.to_numeric(df["presupuesto"], errors="coerce")
+    for columna in ("presupuesto", "presupuesto_cliente"):
+        if columna not in df.columns:
+            df[columna] = np.nan
+        df[columna] = pd.to_numeric(df[columna], errors="coerce")
 
     df["diferencia_horas"] = df["horas_transcurridas"] - df["presupuesto"]
+
+    # Horas de desarrollo por encima (positivo) o por debajo (negativo) de
+    # lo estimado. NaN si el ticket no lleva estimacion.
+    trabajo_real = pd.to_numeric(df.get("horas_trabajo_real"), errors="coerce")
+    df["desviacion_presupuesto"] = trabajo_real - df["presupuesto_cliente"]
+
+    # Consumo sobre lo estimado: 1.0 = clavado, 1.5 = un 50% de mas. Sin
+    # estimacion (o con estimacion 0) no se puede calcular.
+    presupuesto_valido = df["presupuesto_cliente"] > 0
+    df["consumo_presupuesto"] = np.where(
+        presupuesto_valido,
+        trabajo_real / df["presupuesto_cliente"].where(presupuesto_valido),
+        np.nan,
+    )
 
     return df
 

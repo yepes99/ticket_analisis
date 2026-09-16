@@ -72,6 +72,11 @@ def contar_pendientes():
     return len(listar_solicitudes(estado="pendiente"))
 
 
+def contar_resueltas():
+    """Solicitudes ya aprobadas o rechazadas (las que van al historico)."""
+    return len([s for s in listar_solicitudes() if s.get("estado") != "pendiente"])
+
+
 def resolver_solicitud(solicitud_id, aprobar, revisor):
     """
     Marca la solicitud como aprobada o rechazada y la devuelve.
@@ -96,3 +101,17 @@ def obtener_overrides_horas_aprobados():
         s["ticket_id"]: s["valor_propuesto"]
         for s in listar_solicitudes(estado="aprobado", tipo="horas")
     }
+
+
+def formatear_horas(valor, defecto="sin dato"):
+    """
+    "12.5 h" para un numero, y el texto por defecto si el valor falta o no
+    es numerico. Una solicitud antigua o incompleta puede traer None en
+    valor_actual/valor_propuesto, y un f"{None:.1f}" reventaria la pagina.
+    """
+    try:
+        if valor is None:
+            return defecto
+        return f"{float(valor):.1f} h"
+    except (TypeError, ValueError):
+        return defecto
