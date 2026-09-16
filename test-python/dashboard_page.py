@@ -7,6 +7,7 @@ from io import BytesIO
 import math
 import streamlit as st
 
+import busqueda
 import config
 from auth import check_authentication, render_logout_button
 from bono import detectar_bonos_sin_cliente
@@ -186,6 +187,23 @@ df = st.session_state["jira_df"]
 source = st.session_state.get("jira_source") or "Jira"
 st.sidebar.success(f"{len(df)} tickets cargados desde {source}.")
 
+
+# =========================
+# HEADER
+# =========================
+fecha_dashboard = datetime.now().strftime(config.DATE_FORMAT)
+render_hero_header(
+    title="Dashboard Web — Equipo de Soporte",
+    description="Seguimiento de tareas, cumplimiento de SLA y rendimiento del equipo: Leslie Jara · Carmen Yepes · Jorge Gallego.",
+    timestamp=fecha_dashboard,
+)
+
+# El buscador y la ficha del ticket se enseñan aqui, debajo de la cabecera,
+# pero se rellenan mas abajo: necesitan 'filtered', que depende de los
+# filtros de la barra lateral.
+panel_busqueda = st.container()
+ficha_ticket = st.container()
+
 clientes_filter, asignadores_filter, sizes_filter, estados_filter = render_filters(df)
 
 filtered = apply_filters(
@@ -206,6 +224,26 @@ backlog_df = apply_filters(
 
 if filtered.empty:
     st.warning("No se encontraron bugs en los datos de Jira para el periodo seleccionado.")
+    st.stop()
+
+
+# =========================
+# BUSQUEDA DE TICKET Y DE CLIENTE
+# =========================
+# Filtra todo el dashboard (KPIs, tablas y exportes). El ticket elegido
+# enseña ademas su ficha; si es de una fecha fuera del periodo cargado, la
+# ficha se trae de Jira y el resto de la pagina no se toca.
+with panel_busqueda:
+    ticket_buscado, cliente_buscado = busqueda.render_panel_busqueda(filtered, key_prefix="dash_")
+
+with ficha_ticket:
+    busqueda.render_ficha_ticket(filtered, ticket_buscado)
+
+filtered = busqueda.aplicar_busqueda(filtered, ticket_buscado, cliente_buscado)
+backlog_df = busqueda.aplicar_busqueda(backlog_df, ticket_buscado, cliente_buscado)
+
+if filtered.empty:
+    st.warning("Ningun ticket cumple a la vez los filtros de la barra lateral y la busqueda.")
     st.stop()
 
 
@@ -278,17 +316,6 @@ try:
     )
 except Exception as exc:
     st.sidebar.info("No hay datos suficientes para generar exportes.")
-
-
-# =========================
-# HEADER
-# =========================
-fecha_dashboard = datetime.now().strftime(config.DATE_FORMAT)
-render_hero_header(
-    title="Dashboard Web — Equipo de Soporte",
-    description="Seguimiento de tareas, cumplimiento de SLA y rendimiento del equipo: Leslie Jara · Carmen Yepes · Jorge Gallego.",
-    timestamp=fecha_dashboard,
-)
 
 
 # =========================

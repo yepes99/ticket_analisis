@@ -3,7 +3,8 @@ import unittest
 import pandas as pd
 
 from bono import (
-    BONO_ALERTA_HORAS,
+    BONO_AVISO_HORAS,
+    BONO_VERDE_HORAS,
     bono_tono,
     calcular_bono_cliente,
     calcular_bono_por_cliente,
@@ -100,12 +101,24 @@ class BonoTonoTest(unittest.TestCase):
         tono, _, _ = bono_tono(10.0, 0.0)
         self.assertEqual(tono, "danger")
 
-    def test_cerca_de_agotarse_es_danger(self):
-        tono, _, _ = bono_tono(10.0, BONO_ALERTA_HORAS)
+    def test_saldo_negativo_es_danger(self):
+        tono, _, _ = bono_tono(10.0, -3.0)
         self.assertEqual(tono, "danger")
 
-    def test_bono_holgado_es_success(self):
+    def test_cerca_de_agotarse_es_warning(self):
+        tono, _, _ = bono_tono(10.0, BONO_AVISO_HORAS)
+        self.assertEqual(tono, "warning")
+
+    def test_por_debajo_del_umbral_verde_es_warning(self):
         tono, _, _ = bono_tono(10.0, 5.0)
+        self.assertEqual(tono, "warning")
+
+    def test_justo_en_el_umbral_verde_es_success(self):
+        tono, _, _ = bono_tono(10.0, BONO_VERDE_HORAS)
+        self.assertEqual(tono, "success")
+
+    def test_bono_holgado_es_success(self):
+        tono, _, _ = bono_tono(20.0, 12.0)
         self.assertEqual(tono, "success")
 
 

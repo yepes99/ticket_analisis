@@ -17,6 +17,7 @@ from datetime import datetime, timedelta
 
 import streamlit as st
 
+import busqueda
 import solicitudes
 from auth import check_clientes_authentication, render_logout_button
 from data import apply_filters, render_filters, validate_columns
@@ -105,6 +106,21 @@ role = st.session_state.get("role")
 
 if filtered.empty:
     st.warning("No se encontraron bugs en los datos de Jira para el periodo seleccionado.")
+    st.stop()
+
+
+# =========================
+# BUSQUEDA DE TICKET Y DE CLIENTE
+# =========================
+# Filtra las dos pestañas a la vez. El ticket elegido enseña ademas su
+# ficha; si es de una fecha fuera del periodo cargado, la ficha se trae de
+# Jira y el resto de la pagina no se toca.
+ticket_buscado, cliente_buscado = busqueda.render_panel_busqueda(filtered, key_prefix="clientes_")
+busqueda.render_ficha_ticket(filtered, ticket_buscado)
+filtered = busqueda.aplicar_busqueda(filtered, ticket_buscado, cliente_buscado)
+
+if filtered.empty:
+    st.warning("Ningun ticket cumple a la vez los filtros de la barra lateral y la busqueda.")
     st.stop()
 
 

@@ -5,6 +5,7 @@ Cálculo de métricas y KPIs.
 import re
 import pandas as pd
 
+import limites
 from bono import calcular_bono_por_cliente
 from config import TECNICOS_PERMITIDOS
 
@@ -229,12 +230,17 @@ def calculate_top_clients(df):
     )
     clientes_df = clientes_df.merge(ultimos, on="cliente", how="left")
 
-    # Bono de horas: saldo disponible de cada cliente (0 si nunca ha comprado).
+    # Bono de horas: comprado, consumido y saldo disponible de cada cliente
+    # (0 si nunca ha comprado un bono).
     bono_df = calcular_bono_por_cliente(data)
     if not bono_df.empty:
         clientes_df = clientes_df.merge(
-            bono_df[["comprado", "disponible"]].rename(
-                columns={"comprado": "bono_comprado", "disponible": "bono_disponible"}
+            bono_df[["comprado", "consumido", "disponible"]].rename(
+                columns={
+                    "comprado": "bono_comprado",
+                    "consumido": "horas_consumidas",
+                    "disponible": "bono_disponible",
+                }
             ),
             left_on="cliente",
             right_index=True,
@@ -242,9 +248,26 @@ def calculate_top_clients(df):
         )
     else:
         clientes_df["bono_comprado"] = 0.0
+        clientes_df["horas_consumidas"] = 0.0
         clientes_df["bono_disponible"] = 0.0
-    clientes_df["bono_comprado"] = clientes_df["bono_comprado"].fillna(0.0)
-    clientes_df["bono_disponible"] = clientes_df["bono_disponible"].fillna(0.0)
+    for columna in ("bono_comprado", "horas_consumidas", "bono_disponible"):
+        clientes_df[columna] = clientes_df[columna].fillna(0.0)
+
+    # Limite contratado = suma de los bonos comprados, con el valor manual
+    # como respaldo mientras el cliente no tenga ningun bono (ver
+    # limites.limite_efectivo).
+    manuales = limites.obtener_limites_manuales()
+    limite_calculado = [
+        limites.limite_efectivo(cliente_nombre, comprado, manuales=manuales)
+        for cliente_nombre, comprado in zip(clientes_df["cliente"], clientes_df["bono_comprado"])
+    ]
+    clientes_df["limite"] = [valor for valor, _ in limite_calculado]
+    clientes_df["limite_origen"] = [origen for _, origen in limite_calculado]
+
+    # Horas que le quedan al cliente. Con bonos es exactamente el saldo del
+    # bono; con un limite puesto a mano es ese limite menos lo consumido, de
+    # modo que el semaforo funciona igual en los dos casos.
+    clientes_df["disponible"] = clientes_df["limite"] - clientes_df["horas_consumidas"]
 
     return clientes_df
 

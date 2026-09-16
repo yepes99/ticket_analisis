@@ -24,7 +24,7 @@ from ui_components import empty_state, kpi_grid, render_chart_wrapper, section_t
 
 def horas_tono(horas_totales, limite_actual):
     """Tono (success/warning/danger) y mensaje segun el exceso sobre el limite."""
-    if limite_actual is None:
+    if limite_actual is None or pd.isna(limite_actual):
         return "neutral", "Sin limite contratado definido"
 
     exceso = horas_totales - limite_actual
@@ -65,14 +65,40 @@ RANKING_COLUMN_CONFIG = {
     "tiempo_horas": stcc.TextColumn("Tiempo medio"),
     "plan": stcc.TextColumn("Plan", width="medium"),
     "tipo": stcc.TextColumn("Tipo", width="medium"),
-    "bono": stcc.TextColumn("Bono de horas", width="medium"),
+    "horas": stcc.TextColumn(
+        "Horas consumidas",
+        help="Horas de resolucion gastadas en el periodo, sin contar los tickets de compra de bono.",
+    ),
+    "limite_texto": stcc.TextColumn(
+        "Limite contratado",
+        help="Suma de los bonos de horas comprados por el cliente. Mientras no tenga ningun bono se usa el valor puesto a mano en 'Gestionar'.",
+    ),
+    "bono": stcc.TextColumn(
+        "Horas disponibles",
+        width="medium",
+        help=(
+            "Limite contratado menos las horas consumidas (con bonos es el saldo del bono): "
+            "verde con 10 h o mas, naranja por debajo de 10 h, rojo al agotarse."
+        ),
+    ),
 }
 
-# "bono_comprado"/"bono_disponible" son columnas auxiliares (solo para
-# calcular la celda "bono" formateada) que no deben verse en la tabla.
+# "bono_comprado"/"bono_disponible"/"horas_consumidas"/"limite" son columnas
+# auxiliares: guardan el valor numerico con el que se calculan las celdas
+# formateadas ("horas"/"limite_texto"/"bono") y su color, y no deben verse.
 RANKING_COLUMN_ORDER = [
-    "cliente", "dominios", "tickets", "tickets_sin_tiempo", "sla", "tiempo_horas", "plan", "tipo", "bono",
+    "cliente", "dominios", "tickets", "horas", "limite_texto", "bono",
+    "tickets_sin_tiempo", "sla", "tiempo_horas", "plan", "tipo",
 ]
+
+# Colores de celda de la tabla de ranking, con el mismo semaforo que las
+# tarjetas KPI (config.COLOR_VARS) para que verde/naranja/rojo signifiquen
+# lo mismo en toda la app.
+TONO_CELDA = {
+    "success": f"background-color: {config.COLOR_VARS['--success']}; color: #08121b",
+    "warning": f"background-color: {config.COLOR_VARS['--warning']}; color: #080d14",
+    "danger": f"background-color: {config.COLOR_VARS['--danger']}; color: #fff",
+}
 
 # Alto (en px) de la cabecera y de cada fila de un st.dataframe en esta
 # version de Streamlit, medido empiricamente. Con un alto fijo "a ojo" (o
@@ -110,21 +136,94 @@ def _formatear_tabla_ranking(clientes_resumen):
     tabla["plan"] = tabla["plan"].fillna("—") if "plan" in tabla.columns else "—"
     tabla["tipo"] = tabla["tipo"].fillna("—") if "tipo" in tabla.columns else "—"
 
-    def _bono_celda(row):
-        comprado = row.get("bono_comprado", 0.0)
-        disponible = row.get("bono_disponible", 0.0)
-        tono, icono, _ = bono.bono_tono(comprado, disponible)
+    def _disponible_celda(row):
+        tono, icono, _ = _tono_disponible(row)
         if tono == "neutral":
             return "—"
-        return f"{icono} {disponible:.1f} h"
+        return f"{icono} {row['disponible']:.1f} h"
 
-    tabla["bono"] = tabla.apply(_bono_celda, axis=1)
+    tabla["bono"] = tabla.apply(_disponible_celda, axis=1)
+    tabla["horas"] = tabla["horas_consumidas"].apply(lambda v: f"{v:.1f} h" if pd.notna(v) else "—")
+    tabla["limite_texto"] = tabla.apply(_limite_celda, axis=1)
     return tabla
+
+
+def _limite_celda(row):
+    """
+    Limite contratado con una marca de su origen: "(auto)" cuando sale de la
+    suma de bonos comprados y "(manual)" cuando es el valor de respaldo que
+    puso un Web Admin porque el cliente aun no tiene bonos.
+    """
+    valor = row.get("limite")
+    if valor is None or pd.isna(valor):
+        return "—"
+    sufijo = "auto" if row.get("limite_origen") == limites.ORIGEN_BONO else "manual"
+    return f"{valor:.1f} h ({sufijo})"
+
+
+def _tono_disponible(row):
+    """
+    Semaforo de las horas que le quedan al cliente. Sin limite contratado
+    (ni bonos ni valor manual) no hay nada que evaluar: sale en gris.
+    """
+    limite = row.get("limite")
+    if limite is None or pd.isna(limite):
+        return "neutral", "⚪", "Sin horas contratadas definidas"
+
+    disponible = row.get("disponible")
+    if disponible is None or pd.isna(disponible):
+        disponible = 0.0
+    return bono.bono_tono(limite, disponible)
+
+
+def _estilo_ranking(row):
+    """
+    Color de fondo por celda: el bono con su semaforo (verde >=10h, naranja
+    por debajo, rojo agotado) y las horas consumidas con el exceso sobre el
+    limite contratado. Asi se ve de un vistazo que clientes estan en apuros
+    sin tener que abrir su detalle.
+    """
+    estilos = ["" for _ in row.index]
+
+    # Limite contratado y horas disponibles son las dos caras de lo mismo,
+    # asi que se pintan con el mismo color.
+    tono_saldo, _, _ = _tono_disponible(row)
+    if tono_saldo in TONO_CELDA:
+        estilos[row.index.get_loc("bono")] = TONO_CELDA[tono_saldo]
+        estilos[row.index.get_loc("limite_texto")] = TONO_CELDA[tono_saldo]
+
+    tono_horas, _ = horas_tono(row["horas_consumidas"], row.get("limite"))
+    if tono_horas in TONO_CELDA:
+        estilos[row.index.get_loc("horas")] = TONO_CELDA[tono_horas]
+
+    return estilos
+
 
 # Roles con vista simplificada: sin el grafico (no les aporta, solo la
 # tabla les interesa) y a ancho completo para que la tabla sea mas grande
 # y comoda de leer.
 ROLES_VISTA_SIMPLE_RANKING = {"cs", "lector"}
+
+
+def _filtrar_ranking(clientes_resumen, texto_cliente, solo_fuera_limite):
+    """Aplica los filtros de la tabla de ranking sobre el resumen ya calculado."""
+    resultado = clientes_resumen
+
+    if texto_cliente:
+        termino = texto_cliente.strip().lower()
+        resultado = resultado[
+            resultado["cliente"].str.lower().str.contains(termino, na=False)
+            | resultado["dominios"].str.lower().str.contains(termino, na=False)
+        ]
+
+    if solo_fuera_limite:
+        tonos_horas = resultado.apply(
+            lambda fila: horas_tono(fila["horas_consumidas"], fila.get("limite"))[0],
+            axis=1,
+        )
+        resultado = resultado[tonos_horas.isin({"warning", "danger"})]
+
+    return resultado
 
 
 def render_ranking_clientes(filtered, role=None):
@@ -137,20 +236,22 @@ def render_ranking_clientes(filtered, role=None):
         empty_state("No hay clientes para los filtros actuales.")
         return
 
-    busqueda = st.text_input(
+    col_busqueda, col_limite = st.columns([3, 1.4])
+    texto_cliente = col_busqueda.text_input(
         "Buscar cliente",
         placeholder="🔎 Busca por nombre de cliente o dominio...",
         key="ranking_clientes_busqueda",
     )
-    if busqueda:
-        termino = busqueda.strip().lower()
-        clientes_resumen = clientes_resumen[
-            clientes_resumen["cliente"].str.lower().str.contains(termino, na=False)
-            | clientes_resumen["dominios"].str.lower().str.contains(termino, na=False)
-        ]
+    solo_fuera_limite = col_limite.checkbox(
+        "Solo fuera de limite",
+        help="Deja solo los clientes cuyas horas consumidas superan el limite contratado (naranja o rojo).",
+        key="ranking_clientes_fuera_limite",
+    )
+
+    clientes_resumen = _filtrar_ranking(clientes_resumen, texto_cliente, solo_fuera_limite)
 
     if clientes_resumen.empty:
-        empty_state(f"Ningun cliente coincide con \"{busqueda}\".")
+        empty_state("Ningun cliente coincide con los filtros de la tabla.")
         return
 
     # Sin tope: con "muy completa" pedido explicitamente, mejor pagina larga
@@ -163,11 +264,19 @@ def render_ranking_clientes(filtered, role=None):
         # abajo es tan completa como la que ve CS.
         render_chart_wrapper(create_top_clients_chart(clientes_resumen.head(20)))
 
+    st.caption(
+        "**Limite contratado** y **Horas disponibles** van con el mismo semaforo: 🟢 10 h o mas "
+        "disponibles · 🟠 por debajo de 10 h · 🔴 agotadas · ⚪ sin limite definido todavia. "
+        "Las **horas consumidas** se pintan en naranja/rojo cuando superan el limite contratado. "
+        "El limite es la suma de los bonos comprados y, mientras el cliente no tenga ninguno, "
+        "el valor que se ponga a mano en *Detalle por cliente → Gestionar horas y limite*."
+    )
     st.dataframe(
-        _formatear_tabla_ranking(clientes_resumen),
+        _formatear_tabla_ranking(clientes_resumen).style.apply(_estilo_ranking, axis=1),
         width="stretch",
         hide_index=True,
         height=alto_tabla,
+        lazy=False,
         column_config=RANKING_COLUMN_CONFIG,
         column_order=RANKING_COLUMN_ORDER,
     )
@@ -215,19 +324,31 @@ def render_detalle_cliente(filtered, role, key_prefix=""):
     else:
         resueltos = 0
 
-    horas_totales = pd.to_numeric(detalle_df.get("horas_resolucion"), errors="coerce").sum()
-    limite_actual = limites.obtener_limite(cliente_seleccionado)
     bono_info = bono.calcular_bono_cliente(filtered, cliente_seleccionado)
+    # Mismas horas consumidas que en el ranking: las de los tickets normales,
+    # sin contar los tickets de compra de bono (esos suman, no restan).
+    horas_totales = bono_info["consumido"]
+    limite_manual = limites.obtener_limite(cliente_seleccionado)
+    limite_actual, limite_origen = limites.limite_efectivo(cliente_seleccionado, bono_info["comprado"])
+
+    # Horas que le quedan: con bonos es el saldo del bono, y con un limite
+    # puesto a mano es ese limite menos lo consumido. Mismo semaforo.
+    disponible = None if limite_actual is None else limite_actual - horas_totales
+    saldo_tono, _, saldo_mensaje = bono.bono_tono(limite_actual, disponible if disponible is not None else 0.0)
 
     horas_tono_str, horas_mensaje = horas_tono(horas_totales, limite_actual)
-    bono_tono_str, _, bono_mensaje = bono.bono_tono(bono_info["comprado"], bono_info["disponible"])
-    limite_detalle = "Configurado a mano en 'Gestionar' abajo" if limite_actual is not None else "Configurable en 'Gestionar' abajo"
+    if limite_origen == limites.ORIGEN_BONO:
+        limite_detalle = f"Suma de {len(bono_info['compras'])} bono(s) de horas comprados"
+    elif limite_origen == limites.ORIGEN_MANUAL:
+        limite_detalle = "Valor manual · el cliente aun no tiene bonos comprados"
+    else:
+        limite_detalle = "Sin definir · ponlo a mano en 'Gestionar horas y limite' de aqui abajo"
     plan_valor, plan_detalle = _valor_reciente(detalle_df.get("plan_servicio"))
     tipo_valor, tipo_detalle = _valor_reciente(detalle_df.get("tipo_producto"))
 
     section_title(
         f"📊 Resumen · {cliente_seleccionado}",
-        "Horas consumidas frente al limite contratado y saldo del bono de horas.",
+        "Horas consumidas frente al limite contratado y horas que le quedan disponibles.",
     )
 
     # Fila principal: los tres numeros que importan, con color segun su estado.
@@ -241,10 +362,10 @@ def render_detalle_cliente(filtered, role, key_prefix=""):
                 "",
             ),
             (
-                "Bono disponible",
-                f"{bono_info['disponible']:.1f} h" if bono_info["comprado"] > 0 else "Sin bono",
-                bono_mensaje,
-                _kpi_tone(bono_tono_str),
+                "Horas disponibles",
+                f"{disponible:.1f} h" if disponible is not None else "Sin definir",
+                saldo_mensaje,
+                _kpi_tone(saldo_tono),
             ),
         ],
         secondary=True,
@@ -315,10 +436,16 @@ def render_detalle_cliente(filtered, role, key_prefix=""):
                     empty_state("No hay tickets para corregir.")
 
             with gestion_tabs[1]:
+                if limite_origen == limites.ORIGEN_BONO:
+                    st.info(
+                        f"El limite de **{cliente_seleccionado}** se calcula solo: son las "
+                        f"**{limite_actual:.1f} h** de los bonos que ha comprado. El valor de abajo es el "
+                        "respaldo manual y solo se usaria si dejara de tener bonos."
+                    )
                 nuevo_limite = st.number_input(
                     "Limite de horas contratadas",
                     min_value=0.0,
-                    value=float(limite_actual) if limite_actual is not None else 0.0,
+                    value=float(limite_manual) if limite_manual is not None else 0.0,
                     step=1.0,
                     key=f"{key_prefix}nuevo_limite_horas",
                 )
@@ -326,7 +453,7 @@ def render_detalle_cliente(filtered, role, key_prefix=""):
                     solicitudes.crear_solicitud(
                         "limite",
                         cliente_seleccionado,
-                        limite_actual,
+                        limite_manual,
                         nuevo_limite,
                         st.session_state.get("username") or role,
                     )

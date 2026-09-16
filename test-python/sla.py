@@ -176,10 +176,14 @@ def completar_metricas_resolucion(df):
     # ni desde la creacion ni desde que se coge).
     horas_trabajo_real = pd.Series(np.nan, index=df.index, dtype="float64")
     tiene_fecha_cogido = fecha_cogido.notna()
-    horas_trabajo_real.loc[tiene_fecha_cogido] = (
-        (fecha_fin.loc[tiene_fecha_cogido] - fecha_cogido.loc[tiene_fecha_cogido]).dt.total_seconds() / 3600
-        - horas_pending.loc[tiene_fecha_cogido]
-    )
+    # Sin ninguna fecha de "cogido" (consulta vacia, o tickets que nunca han
+    # salido de Backlog) el lado derecho queda vacio y pandas se niega a
+    # meterlo en una columna float64; no hay nada que calcular, se deja NaN.
+    if tiene_fecha_cogido.any():
+        horas_trabajo_real.loc[tiene_fecha_cogido] = (
+            (fecha_fin.loc[tiene_fecha_cogido] - fecha_cogido.loc[tiene_fecha_cogido]).dt.total_seconds() / 3600
+            - horas_pending.loc[tiene_fecha_cogido]
+        )
     df["horas_trabajo_real"] = horas_trabajo_real.round(2)
 
     return df

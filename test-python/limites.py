@@ -31,6 +31,19 @@ def obtener_limite(cliente):
     return _cargar().get(cliente, {}).get("limite_horas")
 
 
+def obtener_limites_manuales():
+    """
+    Mapa {cliente: limite_horas} con todos los limites puestos a mano. Sirve
+    para resolver el limite de muchos clientes de golpe (ranking) sin releer
+    el JSON una vez por cliente.
+    """
+    return {
+        cliente: registro.get("limite_horas")
+        for cliente, registro in _cargar().items()
+        if registro.get("limite_horas") is not None
+    }
+
+
 def obtener_historial(cliente):
     return _cargar().get(cliente, {}).get("historial", [])
 
@@ -49,3 +62,35 @@ def actualizar_limite(cliente, nuevo_valor, usuario="admin"):
         }
     )
     _guardar(datos)
+
+
+# Origen del limite contratado que se enseña en la UI.
+ORIGEN_BONO = "bono"
+ORIGEN_MANUAL = "manual"
+
+
+def limite_efectivo(cliente, bono_comprado=0.0, manuales=None):
+    """
+    Limite de horas contratadas que hay que enseñar para un cliente, junto
+    con su origen.
+
+    El limite ES la suma de los bonos de horas que el cliente ha comprado
+    (ver bono.calcular_bono_por_cliente): cada bono que se compra amplia lo
+    contratado, y el saldo disponible es ese limite menos las horas ya
+    consumidas. Mientras un cliente no tenga ningun bono detectado en Jira
+    se sigue usando el valor puesto a mano en 'Gestionar', para no quedarnos
+    sin limite hasta que empiecen a comprarse bonos.
+
+    Con 'manuales' (ver obtener_limites_manuales) se evita releer el JSON
+    en cada llamada cuando se resuelven muchos clientes seguidos.
+
+    Devuelve (valor, origen); (None, None) si no hay ni bono ni valor manual.
+    """
+    comprado = float(bono_comprado or 0.0)
+    if comprado > 0:
+        return comprado, ORIGEN_BONO
+
+    manual = obtener_limite(cliente) if manuales is None else manuales.get(cliente)
+    if manual is None:
+        return None, None
+    return float(manual), ORIGEN_MANUAL

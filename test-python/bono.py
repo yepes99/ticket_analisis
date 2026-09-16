@@ -15,10 +15,14 @@ import pandas as pd
 BONO_PATTERN = re.compile(r"(\d+(?:[.,]\d+)?)\s*h\b", re.IGNORECASE)
 BONO_KEYWORD = "bundle"
 
-# Umbral de alerta en rojo: el ejemplo de referencia es un bono de 10h del
-# que se han usado 9h (1h disponible todavia) -> por debajo de esto se
-# considera que el bono esta a punto de agotarse.
-BONO_ALERTA_HORAS = 1.0
+# Semaforo del bono de horas, por horas disponibles:
+#   >= 10h            -> verde  (saldo holgado)
+#   entre 0h y 10h    -> naranja (hay que avisar al cliente; a partir de
+#                        BONO_AVISO_HORAS el mensaje ya habla de agotarse)
+#   <= 0h             -> rojo   (agotado o en negativo)
+BONO_VERDE_HORAS = 10.0
+BONO_AVISO_HORAS = 2.0
+BONO_AGOTADO_HORAS = 0.0
 
 
 def extraer_horas_bono(descripcion):
@@ -124,12 +128,24 @@ def detectar_bonos_sin_cliente(df):
     return df.loc[huerfanos, cols]
 
 
-def bono_tono(comprado, disponible):
-    """Tono, icono y mensaje segun el estado del bono de un cliente."""
-    if comprado <= 0:
-        return "neutral", "⚪", "Sin bono de horas contratado"
-    if disponible <= 0:
-        return "danger", "🔴", "Bono agotado"
-    if disponible <= BONO_ALERTA_HORAS:
-        return "danger", "🔴", f"Bono a punto de agotarse ({disponible:.1f} h disponibles)"
-    return "success", "🟢", "Bono activo"
+def bono_tono(contratado, disponible):
+    """
+    Tono, icono y mensaje del saldo de horas de un cliente
+    (ver BONO_VERDE_HORAS / BONO_AVISO_HORAS / BONO_AGOTADO_HORAS).
+
+    'contratado' es el limite de horas del cliente: la suma de sus bonos
+    comprados o, mientras no tenga ninguno, el valor puesto a mano. El
+    semaforo es el mismo en los dos casos, asi que los colores se ven desde
+    el primer dia aunque todavia no haya bonos en Jira.
+    """
+    if contratado is None or contratado <= 0:
+        return "neutral", "⚪", "Sin horas contratadas definidas"
+    if disponible <= BONO_AGOTADO_HORAS:
+        return "danger", "🔴", f"Horas agotadas ({disponible:.1f} h disponibles)"
+    if disponible < BONO_VERDE_HORAS:
+        if disponible <= BONO_AVISO_HORAS:
+            mensaje = f"A punto de agotarse ({disponible:.1f} h disponibles)"
+        else:
+            mensaje = f"Por debajo de {BONO_VERDE_HORAS:.0f} h ({disponible:.1f} h disponibles)"
+        return "warning", "🟠", mensaje
+    return "success", "🟢", f"{disponible:.1f} h disponibles"
