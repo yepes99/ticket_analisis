@@ -194,16 +194,24 @@ def _formatear_tabla_ranking(clientes_resumen):
     return tabla
 
 
+SUFIJO_ORIGEN = {
+    limites.ORIGEN_BONO: "auto",
+    limites.ORIGEN_MANUAL: "manual",
+    limites.ORIGEN_DEFAULT: "por defecto",
+}
+
+
 def _limite_celda(row):
     """
     Limite contratado con una marca de su origen: "(auto)" cuando sale de la
-    suma de bonos comprados y "(manual)" cuando es el valor de respaldo que
-    puso un Web Admin porque el cliente aun no tiene bonos.
+    suma de bonos comprados, "(manual)" cuando lo puso un Web Admin, y
+    "(por defecto)" cuando es el bono de base con el que arranca todo
+    cliente sin bonos ni valor manual (ver limites.LIMITE_DEFAULT_HORAS).
     """
     valor = row.get("limite")
     if valor is None or pd.isna(valor):
         return "—"
-    sufijo = "auto" if row.get("limite_origen") == limites.ORIGEN_BONO else "manual"
+    sufijo = SUFIJO_ORIGEN.get(row.get("limite_origen"), "manual")
     return f"{valor:.1f} h ({sufijo})"
 
 
@@ -441,7 +449,10 @@ def render_detalle_cliente(filtered, role, key_prefix=""):
     elif limite_origen == limites.ORIGEN_MANUAL:
         limite_detalle = "Valor manual · el cliente aun no tiene bonos comprados"
     else:
-        limite_detalle = "Sin definir · ponlo a mano en 'Gestionar horas y limite' de aqui abajo"
+        limite_detalle = (
+            f"Bono de base ({limites.LIMITE_DEFAULT_HORAS:.0f} h) · pidele a un Web Admin que lo cambie "
+            "en 'Gestionar horas y limite' de aqui abajo"
+        )
     plan_valor, plan_detalle = _valor_reciente(detalle_df.get("plan_servicio"))
     tipo_valor, tipo_detalle = _valor_reciente(detalle_df.get("tipo_producto"))
 
@@ -496,6 +507,26 @@ def render_detalle_cliente(filtered, role, key_prefix=""):
                     "Sin compras de bono detectadas para este cliente. Se detectan por la "
                     "descripcion del ticket (ej. \"Tipo de tarea: 10h web changes bundle\")."
                 )
+                if limite_origen == limites.ORIGEN_DEFAULT:
+                    st.caption("Bono de base (no es una compra real en Jira)")
+                    st.dataframe(
+                        pd.DataFrame(
+                            [
+                                {
+                                    "ticket_id": "— bono de base —",
+                                    "fecha_creacion": pd.NaT,
+                                    "bono_horas_compradas": limites.LIMITE_DEFAULT_HORAS,
+                                }
+                            ]
+                        ),
+                        width="stretch",
+                        hide_index=True,
+                        column_config={
+                            "ticket_id": "Ticket",
+                            "fecha_creacion": stcc.DatetimeColumn("Fecha", format="DD/MM/YYYY"),
+                            "bono_horas_compradas": stcc.NumberColumn("Horas compradas", format="%.1f h"),
+                        },
+                    )
             else:
                 st.caption(f"Compras de bono detectadas ({len(bono_info['compras'])})")
                 st.dataframe(
@@ -564,6 +595,12 @@ def render_detalle_cliente(filtered, role, key_prefix=""):
                         f"El limite de **{cliente_seleccionado}** se calcula solo: son las "
                         f"**{limite_actual:.1f} h** de los bonos que ha comprado. El valor de abajo es el "
                         "respaldo manual y solo se usaria si dejara de tener bonos."
+                    )
+                elif limite_origen == limites.ORIGEN_DEFAULT:
+                    st.info(
+                        f"**{cliente_seleccionado}** todavia no tiene bonos comprados ni un limite puesto a mano, "
+                        f"asi que esta usando el bono de base de **{limites.LIMITE_DEFAULT_HORAS:.0f} h**. "
+                        "Envia una solicitud aqui abajo para cambiarlo por otro valor."
                     )
                 nuevo_limite = st.number_input(
                     "Limite de horas contratadas",

@@ -67,6 +67,11 @@ def actualizar_limite(cliente, nuevo_valor, usuario="admin"):
 # Origen del limite contratado que se enseña en la UI.
 ORIGEN_BONO = "bono"
 ORIGEN_MANUAL = "manual"
+ORIGEN_DEFAULT = "default"
+
+# Bono de base con el que arranca todo cliente mientras no tenga ni bonos
+# comprados en Jira ni un limite puesto a mano via 'Gestionar horas y limite'.
+LIMITE_DEFAULT_HORAS = 10.0
 
 
 def limite_efectivo(cliente, bono_comprado=0.0, manuales=None):
@@ -78,19 +83,22 @@ def limite_efectivo(cliente, bono_comprado=0.0, manuales=None):
     (ver bono.calcular_bono_por_cliente): cada bono que se compra amplia lo
     contratado, y el saldo disponible es ese limite menos las horas ya
     consumidas. Mientras un cliente no tenga ningun bono detectado en Jira
-    se sigue usando el valor puesto a mano en 'Gestionar', para no quedarnos
-    sin limite hasta que empiecen a comprarse bonos.
+    se usa el valor puesto a mano en 'Gestionar' y, si tampoco lo tiene, el
+    bono de base LIMITE_DEFAULT_HORAS -- todo cliente arranca con ese bono
+    hasta que se corrija a mano (pidiendolo a un Web Admin) o Jira detecte
+    su primera compra.
 
     Con 'manuales' (ver obtener_limites_manuales) se evita releer el JSON
     en cada llamada cuando se resuelven muchos clientes seguidos.
 
-    Devuelve (valor, origen); (None, None) si no hay ni bono ni valor manual.
+    Devuelve (valor, origen).
     """
     comprado = float(bono_comprado or 0.0)
     if comprado > 0:
         return comprado, ORIGEN_BONO
 
     manual = obtener_limite(cliente) if manuales is None else manuales.get(cliente)
-    if manual is None:
-        return None, None
-    return float(manual), ORIGEN_MANUAL
+    if manual is not None:
+        return float(manual), ORIGEN_MANUAL
+
+    return LIMITE_DEFAULT_HORAS, ORIGEN_DEFAULT
