@@ -383,8 +383,12 @@ def render_ranking_clientes(filtered, role=None, key_prefix=""):
 
     col_busqueda, col_limite = st.columns([3, 1.4])
     texto_cliente = col_busqueda.text_input(
-        "Buscar cliente",
-        placeholder="🔎 Busca por nombre de cliente o dominio...",
+        "Filtrar por cliente",
+        placeholder="Escribe un nombre o dominio para filtrar esta tabla...",
+        help=(
+            "Filtra solo esta tabla, por nombre o dominio (no hace falta el nombre completo). "
+            "Para buscar un TICKET concreto, usa '🔎 Buscar ticket' arriba de las pestañas."
+        ),
         key=f"{key_prefix}ranking_clientes_busqueda",
     )
     solo_fuera_limite = col_limite.checkbox(

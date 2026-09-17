@@ -137,9 +137,13 @@ def render_panel_busqueda(df, key_prefix=""):
     """
     etiquetas = _etiquetas_tickets(df)
 
-    with st.expander("🔎 Buscar ticket", expanded=False):
+    with st.expander("🔎 Buscar ticket por clave (ej. WP-30966)", expanded=False):
+        st.caption(
+            "Esto busca UN ticket concreto por su clave, en toda Jira (no solo en el periodo "
+            "cargado). Para filtrar la lista de clientes, usa el buscador de cada pestaña."
+        )
         ticket = st.selectbox(
-            "Ticket",
+            "Clave del ticket",
             options=list(etiquetas),
             index=None,
             format_func=lambda valor: etiquetas.get(valor, valor),
