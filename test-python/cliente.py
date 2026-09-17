@@ -78,6 +78,13 @@ def extraer_nombre_cliente(resumen):
     return nombre
 
 
+def _texto_o_nan(valor):
+    if pd.isna(valor):
+        return np.nan
+    texto = str(valor).strip()
+    return texto if texto and texto.lower() not in ["nan", "none"] else np.nan
+
+
 def completar_cliente(df):
     df = df.copy()
     domain_source = df["cliente_domain"].copy() if "cliente_domain" in df.columns else pd.Series(np.nan, index=df.index)
@@ -104,5 +111,13 @@ def completar_cliente(df):
         df["cliente_domain"] = df["cliente_domain"].fillna(dominio_desc.apply(normalizar_cliente))
 
     df["cliente"] = df["cliente_nombre"].fillna(df["cliente_domain"])
+
+    # El campo "Empresa" de Jira es texto estructurado (no una URL de la que
+    # sacar un dominio, como el resto de campos "cliente_*"): cuando esta
+    # relleno es el nombre mas fiable, asi que manda incluso sobre el
+    # prefijo del resumen.
+    if "empresa_nombre" in df.columns:
+        df["cliente"] = df["empresa_nombre"].apply(_texto_o_nan).fillna(df["cliente"])
+
     df["cliente"] = df["cliente"].fillna("Sin cliente")
     return df

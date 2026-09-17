@@ -5,6 +5,8 @@ Métricas de backlog
 import pandas as pd
 import numpy as np
 
+from sla import horas_laborales
+
 
 BACKLOG_ESTADOS = ["backlog"]
 
@@ -33,7 +35,7 @@ def get_backlog_df(df):
     backlog = df[mask].copy()
 
     now = pd.Timestamp.now()
-    backlog["dias_en_backlog"] = (now - backlog["fecha_creacion"]).dt.days
+    backlog["dias_en_backlog"] = np.floor(horas_laborales(backlog["fecha_creacion"], now) / 24)
     backlog["antigüedad"] = backlog["dias_en_backlog"].apply(_tramo_antiguedad)
 
     return backlog

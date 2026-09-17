@@ -26,8 +26,13 @@ from data import apply_filters, render_filters, validate_columns
 from metrics import apply_resolution_hour_overrides
 from periodos import PERIODOS, available_years, resolve_query_dates
 from process import cargar_tickets_jira
-from clientes_ui import render_detalle_cliente, render_historico_cambios, render_ranking_clientes
-from ui_components import render_hero_header, section_title
+from clientes_ui import (
+    filtrar_tickets_clientes_wordpress,
+    render_detalle_cliente,
+    render_historico_cambios,
+    render_ranking_clientes,
+)
+from ui_components import empty_state, render_hero_header, section_title
 
 
 # =========================
@@ -123,14 +128,16 @@ render_hero_header(
 
 
 # =========================
-# BUSQUEDA DE TICKET Y DE CLIENTE
+# BUSQUEDA DE TICKET
 # =========================
 # Filtra las dos pestañas a la vez. El ticket elegido enseña ademas su
 # ficha; si es de una fecha fuera del periodo cargado, la ficha se trae de
-# Jira y el resto de la pagina no se toca.
-ticket_buscado, cliente_buscado = busqueda.render_panel_busqueda(filtered, key_prefix="clientes_")
+# Jira y el resto de la pagina no se toca. Para buscar un cliente, usa el
+# buscador de la tabla "Tickets por cliente" o el selector de "Detalle por
+# cliente" (ver busqueda.py).
+ticket_buscado = busqueda.render_panel_busqueda(filtered, key_prefix="clientes_")
 busqueda.render_ficha_ticket(filtered, ticket_buscado)
-filtered = busqueda.aplicar_busqueda(filtered, ticket_buscado, cliente_buscado)
+filtered = busqueda.aplicar_busqueda(filtered, ticket_buscado)
 
 if filtered.empty:
     st.warning("Ningun ticket cumple a la vez los filtros de la barra lateral y la busqueda.")
@@ -140,7 +147,7 @@ if filtered.empty:
 # =========================
 # PESTAÑAS PRINCIPALES
 # =========================
-tabs = st.tabs(["📊 Ranking de clientes", "🔍 Detalle por cliente", "📜 Historial de cambios"])
+tabs = st.tabs(["📊 Ranking de clientes", "🔍 Detalle por cliente", "🧩 Clientes WordPress", "📜 Historial de cambios"])
 
 with tabs[0]:
     render_ranking_clientes(filtered, role=role)
@@ -149,6 +156,17 @@ with tabs[1]:
     render_detalle_cliente(filtered, role)
 
 with tabs[2]:
+    section_title(
+        "🧩 Clientes WordPress",
+        "Solo clientes en plan WP Smart, WP Custom o WP Advanced — los unicos con limite de horas contratado gestionable.",
+    )
+    filtered_wp = filtrar_tickets_clientes_wordpress(filtered)
+    if filtered_wp.empty:
+        empty_state("Ningun cliente del periodo/filtros actuales esta en plan WP Smart, WP Custom o WP Advanced.")
+    else:
+        render_ranking_clientes(filtered_wp, role=role, key_prefix="wp_")
+
+with tabs[3]:
     section_title(
         "📜 Historial de cambios",
         "Cambios de horas y de limite pedidos sobre cualquier cliente, de lo mas reciente a lo mas antiguo.",

@@ -32,7 +32,16 @@ JIRA_BASE_FIELDS = [
     "priority",
     "project",
     "description",
+    "parent",
 ]
+
+# Prefijos del resumen del ticket "Principal" (campo Parent de Jira) que
+# marcan trabajo de mantenimiento continuo, no incidencias reales: se
+# excluyen de las metricas para que no distorsionen el SLA/backlog (llevan
+# mucho tiempo abiertos por diseño). Coincide por prefijo, sin distinguir
+# mayusculas/anio, para que cubra tambien futuras ediciones anuales
+# ("Mantenimiento Web Transversal 2027", etc.).
+PRINCIPAL_EXCLUIDO_PREFIJOS = ["mantenimiento web transversal"]
 
 JIRA_FIELD_ALIASES = {
     "size": [
@@ -54,6 +63,13 @@ JIRA_FIELD_ALIASES = {
     "cliente_empresa": [
         "Cliente / Empresa",
         "Campo personalizado (Cliente / Empresa)",
+    ],
+    # Nombre de empresa como texto estructurado (no una URL como los demas
+    # campos "cliente_*"). Al ser un dato limpio, en cliente.completar_cliente
+    # manda sobre el nombre sacado del resumen del ticket.
+    "empresa_nombre": [
+        "Empresa",
+        "Campo personalizado (Empresa)",
     ],
     "presupuesto": [
         "Budget",
@@ -95,12 +111,14 @@ JIRA_COLUMNS = [
     "cliente_domain",
     "cliente_dominio",
     "cliente_empresa",
+    "empresa_nombre",
     "size",
     "presupuesto",
     "presupuesto_cliente",
     "plan_servicio",
     "tipo_producto",
     "es_wordpress",
+    "principal",
     "historial_estados",
 ]
 
@@ -171,7 +189,27 @@ def cargar_tickets_jira(
     return df
 
 
+def excluir_tickets_mantenimiento(df):
+    """
+    Descarta tickets cuyo "Principal" (Parent de Jira) sea un ticket
+    paraguas de mantenimiento continuo (ver PRINCIPAL_EXCLUIDO_PREFIJOS):
+    llevan mucho tiempo abiertos por diseño y no son incidencias reales, asi
+    que cuentan como ruido en el SLA/backlog/ranking.
+    """
+    if "principal" not in df.columns or df.empty:
+        return df
+
+    principal_normalizado = df["principal"].astype("string").str.strip().str.casefold()
+    es_mantenimiento = pd.Series(False, index=df.index)
+    for prefijo in PRINCIPAL_EXCLUIDO_PREFIJOS:
+        es_mantenimiento |= principal_normalizado.str.startswith(prefijo.casefold(), na=False)
+
+    return df.loc[~es_mantenimiento].copy()
+
+
 def procesar_tickets_jira(df):
+    df = excluir_tickets_mantenimiento(df)
+
     df = convertir_fechas(df)
 
     df = completar_cliente(df)
@@ -646,6 +684,11 @@ def transformar_payload_jira(payload):
                     field_map.get("cliente_empresa"),
                 ),
 
+                "empresa_nombre": extraer_valor_campo_jira(
+                    fields,
+                    field_map.get("empresa_nombre"),
+                ),
+
                 "size": extraer_valor_campo_jira(
                     fields,
                     field_map.get("size"),
@@ -669,6 +712,11 @@ def transformar_payload_jira(payload):
                 "tipo_producto": extraer_valor_campo_jira(
                     fields,
                     field_map.get("tipo_producto"),
+                ),
+
+                "principal": extraer_propiedad_jira(
+                    extraer_propiedad_jira(fields.get("parent"), "fields"),
+                    "summary",
                 ),
 
                 "historial_estados": extraer_historial_estados(issue),

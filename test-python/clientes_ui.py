@@ -24,6 +24,38 @@ from metrics import calculate_client_ticket_detail, calculate_top_clients
 from ui_components import empty_state, kpi_grid, render_chart_wrapper, section_title
 
 
+# El limite de horas contratadas (bono) es un producto de mantenimiento
+# WordPress: solo tiene sentido pedir cambiarlo en estos 3 planes. El resto
+# de clientes puede seguir viendo su bono/horas consumidas (se calculan
+# igual), pero no se les deja pedir un cambio de limite.
+PLANES_CON_LIMITE = {"wp smart", "wp custom", "wp advanced"}
+
+
+def _plan_permite_cambiar_limite(plan_valor):
+    # pd.isna en vez de "or": un Plan vacio puede llegar como pd.NA (columna
+    # de pandas/pyarrow), y bool(pd.NA) revienta con TypeError a proposito
+    # (NA no admite conversion implicita a booleano, a diferencia de None).
+    if pd.isna(plan_valor):
+        return False
+    return str(plan_valor).strip().casefold() in PLANES_CON_LIMITE
+
+
+def filtrar_tickets_clientes_wordpress(filtered):
+    """
+    Deja solo los tickets de clientes en un plan WordPress con limite de
+    horas (ver PLANES_CON_LIMITE). El plan de cada cliente es el ultimo
+    visto en Jira (mismo criterio que la columna "Plan" del ranking).
+    """
+    if filtered.empty or "cliente" not in filtered.columns:
+        return filtered.iloc[0:0]
+
+    resumen = calculate_top_clients(filtered)
+    clientes_wp = set(
+        resumen.loc[resumen["plan"].apply(_plan_permite_cambiar_limite), "cliente"]
+    )
+    return filtered[filtered["cliente"].isin(clientes_wp)]
+
+
 def horas_tono(horas_totales, limite_actual):
     """Tono (success/warning/danger) y mensaje segun el exceso sobre el limite."""
     if limite_actual is None or pd.isna(limite_actual):
@@ -179,8 +211,11 @@ def _formatear_tabla_ranking(clientes_resumen):
     tabla = clientes_resumen.copy()
     tabla["sla"] = tabla["sla"].apply(lambda v: f"{v:.1f}%" if pd.notna(v) else "—")
     tabla["tiempo_horas"] = tabla["tiempo_horas"].apply(lambda v: f"{v:.1f} h" if pd.notna(v) else "—")
-    tabla["plan"] = tabla["plan"].fillna("—") if "plan" in tabla.columns else "—"
-    tabla["tipo"] = tabla["tipo"].fillna("—") if "tipo" in tabla.columns else "—"
+    # .astype(object) antes de fillna: si la columna viene entera a NaN (nadie
+    # tiene el campo relleno en Jira), pandas/pyarrow la tipa como "null" y
+    # rellenarla con un string directamente revienta con ArrowInvalid.
+    tabla["plan"] = tabla["plan"].astype(object).fillna("—") if "plan" in tabla.columns else "—"
+    tabla["tipo"] = tabla["tipo"].astype(object).fillna("—") if "tipo" in tabla.columns else "—"
 
     def _disponible_celda(row):
         tono, icono, _ = _tono_disponible(row)
@@ -331,7 +366,12 @@ def _filtrar_ranking(clientes_resumen, texto_cliente, solo_fuera_limite):
     return resultado
 
 
-def render_ranking_clientes(filtered, role=None):
+def render_ranking_clientes(filtered, role=None, key_prefix=""):
+    """
+    key_prefix distingue las keys de los widgets cuando esta funcion se
+    llama mas de una vez en la misma pagina (p.ej. "Ranking de clientes" y
+    "Clientes WordPress" son dos llamadas independientes en clientes_page.py).
+    """
     section_title(
         "Tickets por cliente",
         "Conteo exacto de bugs Jira unicos, con el nombre comercial separado del dominio.",
@@ -345,12 +385,12 @@ def render_ranking_clientes(filtered, role=None):
     texto_cliente = col_busqueda.text_input(
         "Buscar cliente",
         placeholder="🔎 Busca por nombre de cliente o dominio...",
-        key="ranking_clientes_busqueda",
+        key=f"{key_prefix}ranking_clientes_busqueda",
     )
     solo_fuera_limite = col_limite.checkbox(
         "Solo fuera de limite",
         help="Deja solo los clientes cuyas horas consumidas superan el limite contratado (naranja o rojo).",
-        key="ranking_clientes_fuera_limite",
+        key=f"{key_prefix}ranking_clientes_fuera_limite",
     )
 
     clientes_resumen = _filtrar_ranking(clientes_resumen, texto_cliente, solo_fuera_limite)
@@ -431,30 +471,48 @@ def render_detalle_cliente(filtered, role, key_prefix=""):
     else:
         resueltos = 0
 
+    plan_valor, plan_detalle = _valor_reciente(detalle_df.get("plan_servicio"))
+    tipo_valor, tipo_detalle = _valor_reciente(detalle_df.get("tipo_producto"))
+    es_wordpress = _plan_permite_cambiar_limite(plan_valor)
+
     bono_info = bono.calcular_bono_cliente(filtered, cliente_seleccionado)
     # Mismas horas consumidas que en el ranking: las de los tickets normales,
     # sin contar los tickets de compra de bono (esos suman, no restan).
     horas_totales = bono_info["consumido"]
     limite_manual = limites.obtener_limite(cliente_seleccionado)
-    limite_actual, limite_origen = limites.limite_efectivo(cliente_seleccionado, bono_info["comprado"])
 
-    # Horas que le quedan: con bonos es el saldo del bono, y con un limite
-    # puesto a mano es ese limite menos lo consumido. Mismo semaforo.
-    disponible = None if limite_actual is None else limite_actual - horas_totales
-    saldo_tono, _, saldo_mensaje = bono.bono_tono(limite_actual, disponible if disponible is not None else 0.0)
+    if es_wordpress:
+        limite_actual, limite_origen = limites.limite_efectivo(cliente_seleccionado, bono_info["comprado"])
 
-    horas_tono_str, horas_mensaje = horas_tono(horas_totales, limite_actual)
-    if limite_origen == limites.ORIGEN_BONO:
-        limite_detalle = f"Suma de {len(bono_info['compras'])} bono(s) de horas comprados"
-    elif limite_origen == limites.ORIGEN_MANUAL:
-        limite_detalle = "Valor manual · el cliente aun no tiene bonos comprados"
+        # Horas que le quedan: con bonos es el saldo del bono, y con un limite
+        # puesto a mano es ese limite menos lo consumido. Mismo semaforo.
+        disponible = None if limite_actual is None else limite_actual - horas_totales
+        saldo_tono, _, saldo_mensaje = bono.bono_tono(limite_actual, disponible if disponible is not None else 0.0)
+
+        horas_tono_str, horas_mensaje = horas_tono(horas_totales, limite_actual)
+        if limite_origen == limites.ORIGEN_BONO:
+            limite_detalle = f"Suma de {len(bono_info['compras'])} bono(s) de horas comprados"
+        elif limite_origen == limites.ORIGEN_MANUAL:
+            limite_detalle = "Valor manual · el cliente aun no tiene bonos comprados"
+        else:
+            limite_detalle = (
+                f"Bono de base ({limites.LIMITE_DEFAULT_HORAS:.0f} h) · pidele a un Web Admin que lo cambie "
+                "en 'Gestionar horas y limite' de aqui abajo"
+            )
+        limite_valor_texto = f"{limite_actual:.1f} h" if limite_actual is not None else "Sin definir"
+        disponible_valor_texto = f"{disponible:.1f} h" if disponible is not None else "Sin definir"
     else:
-        limite_detalle = (
-            f"Bono de base ({limites.LIMITE_DEFAULT_HORAS:.0f} h) · pidele a un Web Admin que lo cambie "
-            "en 'Gestionar horas y limite' de aqui abajo"
-        )
-    plan_valor, plan_detalle = _valor_reciente(detalle_df.get("plan_servicio"))
-    tipo_valor, tipo_detalle = _valor_reciente(detalle_df.get("tipo_producto"))
+        # El limite de horas contratadas (bono) es un producto de
+        # mantenimiento WordPress: un cliente en otro plan no tiene ni
+        # limite ni saldo que mostrar, solo las horas reales trabajadas.
+        limite_origen = None
+        limite_actual = None
+        disponible = None
+        saldo_tono, saldo_mensaje = "neutral", "No aplica a este plan"
+        horas_tono_str, horas_mensaje = "", "Solo se compara con un limite en clientes WordPress"
+        limite_detalle = "No aplica · este cliente no esta en un plan WordPress"
+        limite_valor_texto = "No aplica"
+        disponible_valor_texto = "No aplica"
 
     section_title(
         f"📊 Resumen · {cliente_seleccionado}",
@@ -462,21 +520,13 @@ def render_detalle_cliente(filtered, role, key_prefix=""):
     )
 
     # Fila principal: los tres numeros que importan, con color segun su estado.
+    # En clientes fuera de un plan WordPress, limite y disponible salen como
+    # "No aplica" (ver es_wordpress mas arriba): no tienen bono que gestionar.
     kpi_grid(
         [
             ("Horas consumidas", f"{horas_totales:.1f} h", horas_mensaje, _kpi_tone(horas_tono_str)),
-            (
-                "Limite contratado",
-                f"{limite_actual:.1f} h" if limite_actual is not None else "Sin definir",
-                limite_detalle,
-                "",
-            ),
-            (
-                "Horas disponibles",
-                f"{disponible:.1f} h" if disponible is not None else "Sin definir",
-                saldo_mensaje,
-                _kpi_tone(saldo_tono),
-            ),
+            ("Limite contratado", limite_valor_texto, limite_detalle, ""),
+            ("Horas disponibles", disponible_valor_texto, saldo_mensaje, _kpi_tone(saldo_tono)),
         ],
         secondary=True,
     )
@@ -560,7 +610,18 @@ def render_detalle_cliente(filtered, role, key_prefix=""):
             else:
                 st.caption("Toda solicitud queda pendiente hasta que un Web Admin la revise y apruebe.")
 
-            gestion_tabs = st.tabs(["Corregir horas de un ticket", "Cambiar limite del cliente"])
+            puede_cambiar_limite = es_wordpress
+            nombres_gestion_tabs = ["Corregir horas de un ticket"]
+            if puede_cambiar_limite:
+                nombres_gestion_tabs.append("Cambiar limite del cliente")
+            gestion_tabs = st.tabs(nombres_gestion_tabs)
+
+            if not puede_cambiar_limite:
+                st.caption(
+                    f"El limite de horas contratadas solo se gestiona en planes WordPress "
+                    f"(WP Smart, WP Custom, WP Advanced). Plan actual de {cliente_seleccionado}: "
+                    f"{plan_valor}."
+                )
 
             with gestion_tabs[0]:
                 ticket_options = detalle_df["ticket_id"].dropna().astype(str).tolist()
@@ -589,52 +650,53 @@ def render_detalle_cliente(filtered, role, key_prefix=""):
                 else:
                     empty_state("No hay tickets para corregir.")
 
-            with gestion_tabs[1]:
-                if limite_origen == limites.ORIGEN_BONO:
-                    st.info(
-                        f"El limite de **{cliente_seleccionado}** se calcula solo: son las "
-                        f"**{limite_actual:.1f} h** de los bonos que ha comprado. El valor de abajo es el "
-                        "respaldo manual y solo se usaria si dejara de tener bonos."
+            if puede_cambiar_limite:
+                with gestion_tabs[1]:
+                    if limite_origen == limites.ORIGEN_BONO:
+                        st.info(
+                            f"El limite de **{cliente_seleccionado}** se calcula solo: son las "
+                            f"**{limite_actual:.1f} h** de los bonos que ha comprado. El valor de abajo es el "
+                            "respaldo manual y solo se usaria si dejara de tener bonos."
+                        )
+                    elif limite_origen == limites.ORIGEN_DEFAULT:
+                        st.info(
+                            f"**{cliente_seleccionado}** todavia no tiene bonos comprados ni un limite puesto a mano, "
+                            f"asi que esta usando el bono de base de **{limites.LIMITE_DEFAULT_HORAS:.0f} h**. "
+                            "Envia una solicitud aqui abajo para cambiarlo por otro valor."
+                        )
+                    nuevo_limite = st.number_input(
+                        "Limite de horas contratadas",
+                        min_value=0.0,
+                        value=float(limite_manual) if limite_manual is not None else 0.0,
+                        step=1.0,
+                        key=f"{key_prefix}nuevo_limite_horas",
                     )
-                elif limite_origen == limites.ORIGEN_DEFAULT:
-                    st.info(
-                        f"**{cliente_seleccionado}** todavia no tiene bonos comprados ni un limite puesto a mano, "
-                        f"asi que esta usando el bono de base de **{limites.LIMITE_DEFAULT_HORAS:.0f} h**. "
-                        "Envia una solicitud aqui abajo para cambiarlo por otro valor."
-                    )
-                nuevo_limite = st.number_input(
-                    "Limite de horas contratadas",
-                    min_value=0.0,
-                    value=float(limite_manual) if limite_manual is not None else 0.0,
-                    step=1.0,
-                    key=f"{key_prefix}nuevo_limite_horas",
-                )
-                if st.button("Enviar solicitud", key=f"{key_prefix}guardar_limite_horas", width="stretch"):
-                    solicitudes.crear_solicitud(
-                        "limite",
-                        cliente_seleccionado,
-                        limite_manual,
-                        nuevo_limite,
-                        st.session_state.get("username") or role,
-                    )
-                    st.success("Solicitud enviada. Un Web Admin debe aprobarla.")
+                    if st.button("Enviar solicitud", key=f"{key_prefix}guardar_limite_horas", width="stretch"):
+                        solicitudes.crear_solicitud(
+                            "limite",
+                            cliente_seleccionado,
+                            limite_manual,
+                            nuevo_limite,
+                            st.session_state.get("username") or role,
+                        )
+                        st.success("Solicitud enviada. Un Web Admin debe aprobarla.")
 
-                # 'historial_limite', no 'historial': ese nombre es el del
-                # modulo de historial que se usa mas arriba en esta funcion.
-                historial_limite = limites.obtener_historial(cliente_seleccionado)
-                if historial_limite:
-                    st.caption("Historico de cambios del limite")
-                    st.dataframe(
-                        pd.DataFrame(historial_limite),
-                        width="stretch",
-                        hide_index=True,
-                        column_config={
-                            "timestamp": "Fecha",
-                            "usuario": "Usuario",
-                            "valor_anterior": stcc.NumberColumn("Antes", format="%.1f h"),
-                            "valor_nuevo": stcc.NumberColumn("Despues", format="%.1f h"),
-                        },
-                    )
+                    # 'historial_limite', no 'historial': ese nombre es el del
+                    # modulo de historial que se usa mas arriba en esta funcion.
+                    historial_limite = limites.obtener_historial(cliente_seleccionado)
+                    if historial_limite:
+                        st.caption("Historico de cambios del limite")
+                        st.dataframe(
+                            pd.DataFrame(historial_limite),
+                            width="stretch",
+                            hide_index=True,
+                            column_config={
+                                "timestamp": "Fecha",
+                                "usuario": "Usuario",
+                                "valor_anterior": stcc.NumberColumn("Antes", format="%.1f h"),
+                                "valor_nuevo": stcc.NumberColumn("Despues", format="%.1f h"),
+                            },
+                        )
 
             render_solicitudes_cliente(cliente_seleccionado)
 

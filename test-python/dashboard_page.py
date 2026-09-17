@@ -244,13 +244,13 @@ if filtered.empty:
 # enseña ademas su ficha; si es de una fecha fuera del periodo cargado, la
 # ficha se trae de Jira y el resto de la pagina no se toca.
 with panel_busqueda:
-    ticket_buscado, cliente_buscado = busqueda.render_panel_busqueda(filtered, key_prefix="dash_")
+    ticket_buscado = busqueda.render_panel_busqueda(filtered, key_prefix="dash_")
 
 with ficha_ticket:
     busqueda.render_ficha_ticket(filtered, ticket_buscado)
 
-filtered = busqueda.aplicar_busqueda(filtered, ticket_buscado, cliente_buscado)
-backlog_df = busqueda.aplicar_busqueda(backlog_df, ticket_buscado, cliente_buscado)
+filtered = busqueda.aplicar_busqueda(filtered, ticket_buscado)
+backlog_df = busqueda.aplicar_busqueda(backlog_df, ticket_buscado)
 
 if filtered.empty:
     st.warning("Ningun ticket cumple a la vez los filtros de la barra lateral y la busqueda.")
@@ -373,16 +373,10 @@ kpi_grid(
             "Cumplimiento combinado (verde ≥80%, naranja 50-79%, rojo <50%)",
             sla_tone(kpis['sla_global']),
         ),
-    ]
-)
-
-kpi_grid(
-    [
         ("Tareas resueltas", f"{kpis['tickets_resueltos']:,}".replace(",", "."), "Estado Finalizada", "success"),
         ("Tareas abiertas", f"{kpis['tickets_abiertos']:,}".replace(",", "."), "Aún no finalizadas", "warning"),
-        ("Fuera de SLA", f"{kpis['tickets_incumplidos']:,}".replace(",", "."), "Han incumplido el SLA global", "danger"),
-        ("En riesgo", f"{kpis['tickets_en_riesgo']:,}".replace(",", "."), "Abiertas y cerca de incumplir SLA", "warning"),
-    ]
+    ],
+    columns=2,
 )
 
 # Cada tarjeta de arriba es clicable: el boton de debajo abre el listado
@@ -391,11 +385,9 @@ kpi_grid(
 DRILLDOWN_KPIS = {
     "resueltas": ("✅ Ver resueltas", "Tareas resueltas", filtered.get("resuelto") == 1),
     "abiertas": ("🟡 Ver abiertas", "Tareas abiertas", filtered.get("resuelto") == 0),
-    "fuera_sla": ("🔴 Ver fuera de SLA", "Tareas fuera de SLA", filtered.get("sla_global_cumple") == 0),
-    "en_riesgo": ("🟠 Ver en riesgo", "Tareas en riesgo de incumplir SLA", filtered.get("en_riesgo_sla") == 1),
 }
 
-drill_cols = st.columns(4)
+drill_cols = st.columns(2)
 for col, (drill_key, (etiqueta, _, _)) in zip(drill_cols, DRILLDOWN_KPIS.items()):
     if col.button(etiqueta, key=f"drill_{drill_key}", width="stretch"):
         actual = st.session_state.get("kpi_drilldown")
@@ -441,6 +433,45 @@ kpi_grid(
     ],
     secondary=True,
 )
+
+
+# =========================
+# RENDIMIENTO POR TÉCNICO
+# =========================
+# El SLA de arriba es una promesa que se cumple o no (por diseño se queda
+# estable y en verde si el equipo rinde bien); aqui es donde se ve la
+# variacion real de un periodo a otro: quien tarda mas o menos ahora mismo.
+section_title(
+    "👥 Rendimiento por técnico",
+    "Comparativa entre Leslie Jara, Carmen Yepes y Jorge Gallego: volumen de tareas, resueltas, tiempo de resolución y cumplimiento de SLA.",
+)
+
+try:
+    avg_fig = create_avg_resolution_chart(filtered)
+    render_chart_wrapper(avg_fig)
+except Exception:
+    empty_state("No hay datos suficientes para calcular la resolución media.")
+
+ranking = calculate_technician_ranking(filtered)
+
+if not ranking.empty:
+    st.caption("Ranking por volumen de tareas. Las barras de SLA indican el porcentaje de tareas resueltas dentro del plazo.")
+    st.dataframe(
+        ranking,
+        width="stretch",
+        hide_index=True,
+        column_config={
+            "asignado_a": "Técnico",
+            "tickets": stcc.NumberColumn("Total tareas", format="%d"),
+            "resueltos": stcc.NumberColumn("Resueltas", format="%d"),
+            "sla_size": stcc.ProgressColumn("SLA tamaño", format="%.1f%%", min_value=0, max_value=100),
+            "sla_prioridad": stcc.ProgressColumn("SLA prioridad", format="%.1f%%", min_value=0, max_value=100),
+            "sla_global": stcc.ProgressColumn("SLA global", format="%.1f%%", min_value=0, max_value=100),
+            "tiempo": stcc.NumberColumn("Tiempo medio (días)", format="%.1f días"),
+        },
+    )
+else:
+    empty_state("No hay técnicos con datos para los filtros seleccionados.")
 
 
 # =========================
@@ -507,50 +538,6 @@ if not sla_size_df.empty:
     )
 else:
     empty_state("No hay datos suficientes para comparar SLA por tamaño.")
-
-
-# =========================
-# RESOLUCIÓN MEDIA
-# =========================
-section_title(
-    "📊 Resolución media (días)",
-    "Promedio de días que tardan en resolverse los tickets. Incluye la media global y por técnico.",
-)
-try:
-    avg_fig = create_avg_resolution_chart(filtered)
-    render_chart_wrapper(avg_fig)
-except Exception:
-    empty_state("No hay datos suficientes para calcular la resolución media.")
-
-
-# =========================
-# RENDIMIENTO POR TÉCNICO
-# =========================
-section_title(
-    "👥 Rendimiento por técnico",
-    "Comparativa entre Leslie Jara, Carmen Yepes y Jorge Gallego: volumen de tareas, resueltas y cumplimiento de SLA.",
-)
-
-ranking = calculate_technician_ranking(filtered)
-
-if not ranking.empty:
-    st.caption("Ranking por volumen de tareas. Las barras de SLA indican el porcentaje de tareas resueltas dentro del plazo.")
-    st.dataframe(
-        ranking,
-        width="stretch",
-        hide_index=True,
-        column_config={
-            "asignado_a": "Técnico",
-            "tickets": stcc.NumberColumn("Total tareas", format="%d"),
-            "resueltos": stcc.NumberColumn("Resueltas", format="%d"),
-            "sla_size": stcc.ProgressColumn("SLA tamaño", format="%.1f%%", min_value=0, max_value=100),
-            "sla_prioridad": stcc.ProgressColumn("SLA prioridad", format="%.1f%%", min_value=0, max_value=100),
-            "sla_global": stcc.ProgressColumn("SLA global", format="%.1f%%", min_value=0, max_value=100),
-            "tiempo": stcc.NumberColumn("Tiempo medio (días)", format="%.1f días"),
-        },
-    )
-else:
-    empty_state("No hay técnicos con datos para los filtros seleccionados.")
 
 
 # =========================

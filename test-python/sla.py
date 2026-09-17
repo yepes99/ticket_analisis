@@ -2,12 +2,12 @@ import numpy as np
 import pandas as pd
 
 
-SLA_PRIORIDAD_HORAS = {
-    "Highest": 4,
-    "High": 8,
-    "Medium": 24,
-    "Low": 72,
-    "Lowest": 120,
+SLA_PRIORIDAD_DIAS = {
+    "Highest": 3,
+    "High": 4,
+    "Medium": 7,
+    "Low": 10,
+    "Lowest": 14,
 }
 
 SLA_SIZE_DIAS = {
@@ -17,7 +17,7 @@ SLA_SIZE_DIAS = {
     "XL": 60,
 }
 
-DEFAULT_SLA_HORAS = 24
+DEFAULT_SLA_DIAS = 7
 RISK_THRESHOLD = 0.8
 
 # Estado desde el que se considera que "cogen" el ticket (el tiempo de
@@ -42,6 +42,62 @@ ESTADOS_RESUELTOS = {
     "terminada",
     "terminado",
 }
+
+
+# Segundos desde el 1970-01-01 (jueves) hasta el lunes anterior, para que
+# "segundos desplazados" module una semana de al principio del lunes.
+_DESPLAZAMIENTO_A_LUNES = 3 * 86400
+_SEGUNDOS_SEMANA = 7 * 86400
+_INICIO_FIN_DE_SEMANA = 5 * 86400  # sabado 00:00, contando desde el lunes
+_SEGUNDOS_FIN_DE_SEMANA = 2 * 86400  # sabado + domingo completos
+
+
+_EPOCH = pd.Timestamp("1970-01-01")
+
+
+def _segundos_fin_de_semana_acumulados(t):
+    """
+    F(t) = segundos de fin de semana (sabado+domingo) transcurridos entre el
+    1970-01-01 00:00 y `t`. Como el patron semanal se repite siempre igual,
+    horas_fin_de_semana(inicio, fin) = F(fin) - F(inicio); no hace falta
+    recorrer dia a dia, asi que es rapido incluso con miles de tickets.
+    Acepta un Timestamp suelto o una Series.
+
+    Dividir por pd.Timedelta(seconds=1) en vez de mirar directamente los
+    nanosegundos internos: una columna datetime64 puede guardarse en
+    microsegundos o nanosegundos segun la version de pandas, y asumir uno
+    fijo da segundos mal escalados (bug ya visto una vez).
+    """
+    segundos = (t - _EPOCH) / pd.Timedelta(seconds=1) + _DESPLAZAMIENTO_A_LUNES
+    semanas_completas = np.floor(segundos / _SEGUNDOS_SEMANA)
+    posicion_en_semana = segundos - semanas_completas * _SEGUNDOS_SEMANA
+    parcial = np.clip(posicion_en_semana - _INICIO_FIN_DE_SEMANA, 0, _SEGUNDOS_FIN_DE_SEMANA)
+    return semanas_completas * _SEGUNDOS_FIN_DE_SEMANA + parcial
+
+
+def horas_laborales(inicio, fin):
+    """
+    Horas entre `inicio` y `fin` sin contar sabados ni domingos (no
+    descuenta festivos, solo fin de semana). Acepta Timestamps sueltos o
+    Series/columnas de pandas, en cualquier combinacion: una Series y un
+    Timestamp suelto se hacen broadcast entre si, como una resta normal.
+    """
+    inicio = pd.to_datetime(inicio)
+    fin = pd.to_datetime(fin)
+
+    diferencia = fin - inicio
+    horas_totales = (
+        diferencia.dt.total_seconds() / 3600
+        if hasattr(diferencia, "dt")
+        else diferencia.total_seconds() / 3600
+    )
+
+    horas_finde = (
+        _segundos_fin_de_semana_acumulados(fin) - _segundos_fin_de_semana_acumulados(inicio)
+    ) / 3600
+
+    resultado = horas_totales - horas_finde
+    return resultado.clip(lower=0) if isinstance(resultado, pd.Series) else max(float(resultado), 0.0)
 
 
 def normalizar_prioridad(series):
@@ -85,11 +141,11 @@ def _analizar_historial_estados(historial, cutoff):
         if cambio.get("a") == ESTADO_PENDING_INFO and pending_inicio is None:
             pending_inicio = fecha
         elif cambio.get("de") == ESTADO_PENDING_INFO and pending_inicio is not None:
-            horas_pending += (fecha - pending_inicio).total_seconds() / 3600
+            horas_pending += horas_laborales(pending_inicio, fecha)
             pending_inicio = None
 
     if pending_inicio is not None:
-        horas_pending += (cutoff - pending_inicio).total_seconds() / 3600
+        horas_pending += horas_laborales(pending_inicio, cutoff)
 
     return horas_pending, fecha_cogido
 
@@ -155,17 +211,16 @@ def completar_metricas_resolucion(df):
     df["horas_pending_info"] = horas_pending.round(2)
     df["fecha_cogido"] = fecha_cogido
 
-    df["horas_resolucion"] = (
-        (fecha_resolucion - fecha_creacion).dt.total_seconds() / 3600 - horas_pending
-    )
+    # Todos los tiempos se cuentan en dias/horas laborales (sin fines de
+    # semana, ver horas_laborales): el "Pending Info" ya se resta aparte,
+    # asi que no hay doble descuento aunque caiga en fin de semana.
+    df["horas_resolucion"] = horas_laborales(fecha_creacion, fecha_resolucion) - horas_pending
     df.loc[fecha_resolucion.isna() | fecha_creacion.isna(), "horas_resolucion"] = np.nan
     df["horas_resolucion"] = df["horas_resolucion"].round(2)
 
     df["dias_resolucion"] = df["horas_resolucion"] / 24
 
-    df["horas_transcurridas"] = (
-        (fecha_fin - fecha_creacion).dt.total_seconds() / 3600 - horas_pending
-    )
+    df["horas_transcurridas"] = horas_laborales(fecha_creacion, fecha_fin) - horas_pending
     df.loc[fecha_creacion.isna(), "horas_transcurridas"] = np.nan
     df["horas_transcurridas"] = df["horas_transcurridas"].round(2)
     df["dias_abierto"] = np.floor(df["horas_transcurridas"] / 24)
@@ -181,7 +236,7 @@ def completar_metricas_resolucion(df):
     # meterlo en una columna float64; no hay nada que calcular, se deja NaN.
     if tiene_fecha_cogido.any():
         horas_trabajo_real.loc[tiene_fecha_cogido] = (
-            (fecha_fin.loc[tiene_fecha_cogido] - fecha_cogido.loc[tiene_fecha_cogido]).dt.total_seconds() / 3600
+            horas_laborales(fecha_cogido.loc[tiene_fecha_cogido], fecha_fin.loc[tiene_fecha_cogido])
             - horas_pending.loc[tiene_fecha_cogido]
         )
     df["horas_trabajo_real"] = horas_trabajo_real.round(2)
@@ -243,22 +298,22 @@ def calcular_sla_global(sla_prioridad, sla_size):
 def completar_sla_prioridad(df):
     df = df.copy()
 
-    df["sla_horas_objetivo"] = (
+    df["sla_dias_objetivo"] = (
         normalizar_prioridad(df["prioridad"])
-        .map(SLA_PRIORIDAD_HORAS)
-        .fillna(DEFAULT_SLA_HORAS)
+        .map(SLA_PRIORIDAD_DIAS)
+        .fillna(DEFAULT_SLA_DIAS)
     )
 
     df["sla_prioridad_cumple"] = evaluar_cumplimiento(
-        df["horas_resolucion"],
-        df["horas_transcurridas"],
-        df["sla_horas_objetivo"],
+        df["dias_resolucion"],
+        df["horas_transcurridas"] / 24,
+        df["sla_dias_objetivo"],
         df["resuelto"],
     )
     df["sla_prioridad_incumple"] = (df["sla_prioridad_cumple"] == 0).astype(int)
     df["en_riesgo_sla"] = calcular_en_riesgo(
-        df["horas_transcurridas"],
-        df["sla_horas_objetivo"],
+        df["horas_transcurridas"] / 24,
+        df["sla_dias_objetivo"],
         df["resuelto"],
     )
 

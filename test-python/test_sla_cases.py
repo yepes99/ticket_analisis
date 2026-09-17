@@ -13,6 +13,11 @@ class SlaCasesTest(unittest.TestCase):
         self.now = pd.Timestamp("2026-08-27 12:00:00")
 
     def build_df(self):
+        # self.now (2026-08-27) es jueves. Las fechas de BAD-1 y RISK-1 estan
+        # elegidas para caer en dias concretos de la semana, ya que el SLA se
+        # cuenta en dias laborales (sin fines de semana, ver sla.horas_laborales):
+        # cambiar una fecha un dia puede cruzar o no un fin de semana y dar un
+        # resultado distinto del que el nombre del caso espera.
         return pd.DataFrame(
             [
                 {
@@ -31,7 +36,7 @@ class SlaCasesTest(unittest.TestCase):
                     "prioridad": "Highest",
                     "size": "S",
                     "fecha_creacion": pd.Timestamp("2026-08-20 10:00"),
-                    "fecha_resolucion": pd.Timestamp("2026-08-21 10:00"),
+                    "fecha_resolucion": pd.Timestamp("2026-08-26 10:00"),
                     "cliente": "A",
                     "asignado_a": "Leslie Jara",
                 },
@@ -50,7 +55,7 @@ class SlaCasesTest(unittest.TestCase):
                     "estado": "Backlog",
                     "prioridad": "Medium",
                     "size": "S",
-                    "fecha_creacion": pd.Timestamp("2026-08-26 16:00"),
+                    "fecha_creacion": pd.Timestamp("2026-08-19 12:00"),
                     "fecha_resolucion": pd.NaT,
                     "cliente": "B",
                     "asignado_a": "Carmen Yepes",
@@ -59,8 +64,8 @@ class SlaCasesTest(unittest.TestCase):
                     "ticket_id": "OPEN-BAD",
                     "estado": "Backlog",
                     "prioridad": "Medium",
-                    "size": "S",
-                    "fecha_creacion": pd.Timestamp("2026-08-25 11:00"),
+                    "size": "L",
+                    "fecha_creacion": pd.Timestamp("2026-08-15 11:00"),
                     "fecha_resolucion": pd.NaT,
                     "cliente": "C",
                     "asignado_a": "Jorge Gallego",

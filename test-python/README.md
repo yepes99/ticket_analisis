@@ -156,3 +156,8 @@ source venv/bin/activate
 python -m unittest discover -p "test_*.py"
 ```
 
+Para rubir al repo remoto
+
+git add archivo1 archivo2      # o "git add -A" para todo
+git commit -m "Descripción del cambio"
+git push origin master:main

@@ -1,15 +1,18 @@
 """
-Panel de busqueda, compartido por el Dashboard y la pagina de Clientes.
+Panel de busqueda de tickets, compartido por el Dashboard y la pagina de
+Clientes.
 
-Es un desplegable con dos buscadores independientes:
-- Ticket: lista los tickets del periodo cargado y deja escribir cualquier
-  clave. Si la clave no esta en lo cargado (porque es de otra fecha) se
-  consulta directamente a Jira, para que buscar un ticket no dependa del
-  periodo que se haya elegido en la barra lateral.
-- Cliente: deja la pagina filtrada por ese cliente.
+Lista los tickets del periodo cargado y deja escribir cualquier clave. Si
+la clave no esta en lo cargado (porque es de otra fecha) se consulta
+directamente a Jira, para que buscar un ticket no dependa del periodo que
+se haya elegido en la barra lateral. Elegir un ticket enseña su ficha
+completa arriba, con cliente, horas, SLA, tecnico y fechas.
 
-Se pueden usar a la vez o por separado. Elegir un ticket ademas enseña su
-ficha completa arriba, con cliente, horas, SLA, tecnico y fechas.
+Para buscar un CLIENTE en vez de un ticket no hace falta este panel: la
+tabla de "Tickets por cliente" ya tiene su propio buscador por nombre/
+dominio (ver clientes_ui.render_ranking_clientes), y "Detalle de tareas
+por cliente" tiene su propio selector. Tener un tercer buscador de cliente
+aqui era redundante y confundia mas que ayudaba.
 """
 
 import re
@@ -90,9 +93,8 @@ def _etiquetas_tickets(df):
 
 
 def _limpiar_busqueda(key_prefix):
-    """Deja los dos desplegables del panel sin seleccion."""
+    """Deja el desplegable del panel sin seleccion."""
     st.session_state[f"{key_prefix}busqueda_ticket"] = None
-    st.session_state[f"{key_prefix}busqueda_cliente"] = None
 
 
 def _repetir_busqueda(key_prefix, tipo):
@@ -130,22 +132,13 @@ def _render_recientes(contenedor, key_prefix, tipo, actual, etiqueta_func=str):
 
 def render_panel_busqueda(df, key_prefix=""):
     """
-    Desplegable con el buscador de tickets y el de clientes.
-    Devuelve (ticket, cliente); cada uno None si no se ha elegido nada.
+    Desplegable con el buscador de tickets.
+    Devuelve el ticket elegido, o None si no se ha elegido nada.
     """
     etiquetas = _etiquetas_tickets(df)
-    # astype(str) antes de ordenar: si una fila trae un valor no textual en
-    # 'cliente', sorted() sobre tipos mezclados reventaria.
-    clientes = (
-        sorted(df["cliente"].dropna().astype(str).unique().tolist())
-        if "cliente" in df.columns
-        else []
-    )
 
-    with st.expander("🔎 Buscar ticket o cliente", expanded=False):
-        col_ticket, col_cliente = st.columns(2)
-
-        ticket = col_ticket.selectbox(
+    with st.expander("🔎 Buscar ticket", expanded=False):
+        ticket = st.selectbox(
             "Ticket",
             options=list(etiquetas),
             index=None,
@@ -159,19 +152,9 @@ def render_panel_busqueda(df, key_prefix=""):
             ),
         )
 
-        cliente = col_cliente.selectbox(
-            "Cliente",
-            options=clientes,
-            index=None,
-            placeholder="Elige un cliente",
-            key=f"{key_prefix}busqueda_cliente",
-            help="Deja toda la pagina filtrada por ese cliente.",
-        )
+        _render_recientes(st, key_prefix, "ticket", ticket, lambda v: normalizar_clave(v) or str(v))
 
-        _render_recientes(col_ticket, key_prefix, "ticket", ticket, lambda v: normalizar_clave(v) or str(v))
-        _render_recientes(col_cliente, key_prefix, "cliente", cliente)
-
-        if ticket or cliente:
+        if ticket:
             # Va por callback: el estado de un widget no se puede tocar una vez
             # instanciado, pero si antes del rerun que dispara el boton.
             st.button(
@@ -181,12 +164,11 @@ def render_panel_busqueda(df, key_prefix=""):
                 args=(key_prefix,),
             )
 
-    # Se apuntan despues de pintar las pastillas para que la busqueda actual
+    # Se apunta despues de pintar las pastillas para que la busqueda actual
     # no salga tambien como "reciente" en la misma pasada.
     historial.registrar_busqueda("ticket", ticket)
-    historial.registrar_busqueda("cliente", cliente)
 
-    return ticket, cliente
+    return ticket
 
 
 def resolver_ticket(df, ticket):
@@ -216,9 +198,9 @@ def resolver_ticket(df, ticket):
     return "jira", remoto.iloc[0]
 
 
-def aplicar_busqueda(df, ticket, cliente):
+def aplicar_busqueda(df, ticket):
     """
-    Filtra la pagina por el cliente y/o el ticket elegidos.
+    Filtra la pagina por el ticket elegido en el buscador.
 
     Un ticket que no esta en los datos cargados (es de otra fecha) no vacia
     la pagina: su ficha se enseña aparte y el resto sigue con sus filtros.
@@ -227,9 +209,6 @@ def aplicar_busqueda(df, ticket, cliente):
         return df
 
     resultado = df
-
-    if cliente and "cliente" in resultado.columns:
-        resultado = resultado[resultado["cliente"].eq(cliente)]
 
     clave = normalizar_clave(ticket)
     if clave and "ticket_id" in resultado.columns:

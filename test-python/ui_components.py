@@ -33,15 +33,20 @@ def empty_state(message):
     st.markdown(f"<div class='empty-state'>{message}</div>", unsafe_allow_html=True)
 
 
-def kpi_grid(items, secondary=False):
+def kpi_grid(items, secondary=False, columns=None):
     """
     Renderiza una grilla de KPI cards.
-    
+
     Args:
         items (list): Lista de tuplas (label, value, subtext, tone)
         secondary (bool): Si True, usa grid de 3 columnas
+        columns (int|None): Numero de columnas exacto (anula 'secondary'),
+            para cuadrar el numero de tarjetas sin dejar hueco en blanco.
     """
     grid_class = "kpi-grid secondary" if secondary else "kpi-grid"
+    style_attr = ""
+    if columns:
+        style_attr = f" style=\"grid-template-columns: repeat({int(columns)}, minmax(0, 1fr));\""
     cards = []
     for label, value, subtext, tone in items:
         tone_class = f" {tone}" if tone else ""
@@ -59,7 +64,7 @@ def kpi_grid(items, secondary=False):
         )
 
     st.markdown(
-        f"<div class=\"{grid_class}\">{''.join(cards)}</div>",
+        f"<div class=\"{grid_class}\"{style_attr}>{''.join(cards)}</div>",
         unsafe_allow_html=True,
     )
 
