@@ -30,6 +30,7 @@ test-python/
 - bono.py             # bonos de horas y semaforo de saldo
 - limites.py          # limite de horas contratadas por cliente
 - presupuesto.py      # presupuesto de cliente vs. tiempo de desarrollo
+- framework.py        # tareas del proyecto Framework Webplus
 - solicitudes.py      # solicitudes de cambio de horas/limite
 - historial.py        # ultimas busquedas y ultimos cambios
 - busqueda.py         # panel de busqueda de ticket y cliente
@@ -142,6 +143,16 @@ Donde se ve:
 - **Clientes** → *Detalle por cliente* → pestaña *📋 Tickets*: columnas `Presupuesto cliente` y `Desviacion`, con la fila pintada cuando se ha pasado.
 
 > El campo antiguo **"Budget"** (`customfield_16862`) se sigue calculando (columnas `presupuesto` y `diferencia_horas`) pero ya no se enseña en la tabla: **no lo rellena nadie**, en los ultimos dos meses no habia ni un solo ticket con ese campo puesto. Para volver a verlo basta con añadir `"presupuesto"` y `"diferencia_horas"` a `clientes_ui.TICKETS_COLUMN_ORDER`.
+
+## Framework Webplus
+
+Los tecnicos de soporte, ademas de los bugs de WP, hacen tareas del proyecto **Framework Webplus**. Esa carga no aparecia por ningun lado, asi que al comparar el rendimiento del equipo faltaba media foto: alguien con pocos tickets de WP podia estar cargado de tareas del framework.
+
+Se consulta con su propio JQL (`project = "Framework Webplus"`, sobrescribible con `FW_JQL` en la seccion `[JIRA]` de los secretos) y el mismo periodo que el resto del dashboard. Se queda **solo con lo asignado a Leslie Jara, Carmen Yepes y Jorge Gallego**, y descarta los Epic (son contenedores de otras tareas, contarlos inflaria el volumen).
+
+Se ve en el Dashboard, en la seccion **🧩 Framework Webplus — en que esta cada uno**: una tabla aparte con el tecnico delante, ordenada con lo que esta en curso primero y agrupada por persona, mas una linea con el reparto (`Jorge Gallego 4 · Leslie Jara 2 · Carmen Yepes 0`).
+
+Va en su propio bloque y **no se mezcla** con nada de WP, a proposito: las tareas de FW no llevan el campo Size (no hay SLA por tamaño), no tienen presupuesto de cliente ni bono de horas, y su flujo no pasa por Backlog, asi que tampoco hay `horas_trabajo_real`. Sus tiempos tampoco son comparables (41 dias de media frente a 1,8 en WP). Por eso el grafico de rendimiento por tecnico sigue midiendo solo WP.
 
 ## Historial
 

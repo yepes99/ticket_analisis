@@ -9,6 +9,7 @@ import streamlit as st
 
 import busqueda
 import config
+import framework
 import historial
 from auth import check_authentication, render_logout_button
 from bono import detectar_bonos_sin_cliente
@@ -50,7 +51,7 @@ from charts import (
     create_sla_comparison_chart,
     create_status_bar_chart,
     create_priority_bar_chart,
-    create_avg_resolution_chart,
+    create_tecnico_carga_chart,
 )
 from periodos import resolve_query_dates, available_years, PERIODOS
 from backlog_metrics import calculate_backlog_detalle
@@ -136,6 +137,8 @@ if "jira_source" not in st.session_state:
     st.session_state["jira_source"] = None
 if "jira_backlog_df" not in st.session_state:
     st.session_state["jira_backlog_df"] = None
+if "jira_fw_df" not in st.session_state:
+    st.session_state["jira_fw_df"] = None
 
 periodo = st.sidebar.selectbox(
     "Periodo",
@@ -172,6 +175,14 @@ if st.sidebar.button("Consultar Jira", type="primary", width="stretch"):
         st.session_state["jira_backlog_df"] = load_and_validate_jira_data(
             max_results=None,
             jql=jira_config["BACKLOG_JQL"],
+        )
+        # Tareas de Framework Webplus del mismo periodo: es otro proyecto de
+        # Jira, asi que va en su propia consulta.
+        st.session_state["jira_fw_df"] = load_and_validate_jira_data(
+            max_results=None,
+            start_date=query_start_date,
+            end_date=query_end_date,
+            jql=framework.leer_fw_jql(jira_config),
         )
         inicio_label = query_start_date.strftime("%d/%m/%Y") if query_start_date else "el origen"
         periodo_label = f"{inicio_label} - {query_end_date.strftime('%d/%m/%Y')}"
@@ -230,6 +241,16 @@ backlog_df = apply_filters(
     clientes=clientes_filter,
     asignadores=asignadores_filter,
     sizes=sizes_filter,
+)
+
+# Framework Webplus: solo se le aplica el filtro de tecnico. Los de cliente
+# y size no tienen sentido aqui (las tareas de FW no son de un cliente ni
+# llevan el campo Size).
+fw_df = framework.filtrar_equipo(
+    apply_filters(
+        st.session_state["jira_fw_df"] if st.session_state["jira_fw_df"] is not None else df.iloc[0:0].copy(),
+        asignadores=asignadores_filter,
+    )
 )
 
 if filtered.empty:
@@ -446,9 +467,15 @@ section_title(
     "Comparativa entre Leslie Jara, Carmen Yepes y Jorge Gallego: volumen de tareas, resueltas, tiempo de resolución y cumplimiento de SLA.",
 )
 
+st.caption(
+    "Las barras son los días medios que tarda cada uno en cerrar un ticket: **cuantos menos, mejor**. "
+    "La línea de arriba es cuántos tickets ha cerrado, y hay que leer las dos cosas juntas: "
+    "tardar 5 días de media habiendo cerrado 40 tickets no es lo mismo que tardarlos habiendo cerrado 4. "
+    "La línea discontinua marca la media del equipo."
+)
+
 try:
-    avg_fig = create_avg_resolution_chart(filtered)
-    render_chart_wrapper(avg_fig)
+    render_chart_wrapper(create_tecnico_carga_chart(filtered))
 except Exception:
     empty_state("No hay datos suficientes para calcular la resolución media.")
 
@@ -538,6 +565,74 @@ if not sla_size_df.empty:
     )
 else:
     empty_state("No hay datos suficientes para comparar SLA por tamaño.")
+
+
+# =========================
+# FRAMEWORK WEBPLUS
+# =========================
+# Tabla aparte, sin mezclar con nada de WP: son tareas de otro proyecto,
+# sin Size ni presupuesto, y sus tiempos no son comparables con los de un
+# bug. Aqui lo que interesa es quien tiene que tarea entre manos.
+section_title(
+    "🧩 Framework Webplus — en qué está cada uno",
+    "Tareas del proyecto Framework Webplus asignadas al equipo de soporte, aparte de los tickets de WP. "
+    "Primero lo que está en curso.",
+)
+
+resumen_fw = framework.resumen_fw(fw_df)
+
+if resumen_fw["total"] == 0:
+    empty_state(
+        "Ninguna tarea de Framework Webplus asignada a Leslie Jara, Carmen Yepes o Jorge Gallego "
+        "en el periodo y filtros actuales."
+    )
+else:
+    # Mismas tarjetas que el resumen global de arriba, para que se lea igual.
+    kpi_grid(
+        [
+            ("Total tareas FW", str(resumen_fw["total"]), "Tareas de Framework cargadas desde Jira", ""),
+            ("Resueltas", str(resumen_fw["resueltas"]), "Ya finalizadas", "success"),
+            ("En curso", str(resumen_fw["abiertas"]), "Aún sin cerrar", "warning" if resumen_fw["abiertas"] else ""),
+            (
+                "Tiempo medio",
+                f"{resumen_fw['dias_medios']} días" if resumen_fw["dias_medios"] is not None else "—",
+                "Desde creación hasta cierre",
+                "",
+            ),
+        ]
+    )
+
+    # Una tarjeta por tecnico: de un vistazo, quien esta metido en Framework.
+    carga_fw = framework.carga_por_tecnico(fw_df)
+    kpi_grid(
+        [
+            (
+                tecnico,
+                str(datos_tecnico["total"]),
+                f"{datos_tecnico['abiertas']} en curso" if datos_tecnico["total"] else "Sin tareas de Framework",
+                "warning" if datos_tecnico["abiertas"] else "",
+            )
+            for tecnico, datos_tecnico in carga_fw.items()
+        ],
+        secondary=True,
+    )
+
+    st.dataframe(
+        framework.detalle_fw(fw_df),
+        width="stretch",
+        hide_index=True,
+        column_config={
+            "asignado_a": stcc.TextColumn("Técnico", width="medium"),
+            "ticket_id": "Tarea",
+            "resumen": stcc.TextColumn("En qué consiste", width="large"),
+            "tipo": "Tipo",
+            "estado": "Estado",
+            "prioridad": "Prioridad",
+            "fecha_creacion": stcc.DatetimeColumn("Creada", format="DD/MM/YYYY"),
+            "fecha_resolucion": stcc.TextColumn("Resuelta"),
+            "dias_resolucion": stcc.TextColumn("Días en resolverse"),
+        },
+    )
 
 
 # =========================
