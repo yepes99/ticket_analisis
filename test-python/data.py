@@ -1,5 +1,6 @@
 import streamlit as st
 
+import origen as origen_mod
 from config import REQUIRED_COLUMNS, TECNICOS_PERMITIDOS
 from process import cargar_tickets_jira
 
@@ -75,10 +76,19 @@ def render_filters(df):
             ["Abiertos", "Cerrados"],
         )
 
-    return clientes, asignadores, sizes, estados
+    origenes = []
+    if "origen" in df.columns:
+        origenes = st.sidebar.multiselect(
+            "Origen",
+            sorted(df["origen"].dropna().unique()),
+            format_func=origen_mod.etiqueta,
+            help="De donde entro el ticket: de una conversacion de Intercom o creado directamente en Jira.",
+        )
+
+    return clientes, asignadores, sizes, estados, origenes
 
 
-def apply_filters(df, clientes=None, asignadores=None, sizes=None, estados=None):
+def apply_filters(df, clientes=None, asignadores=None, sizes=None, estados=None, origenes=None):
     filtered = df.copy()
 
     if clientes:
@@ -97,5 +107,8 @@ def apply_filters(df, clientes=None, asignadores=None, sizes=None, estados=None)
         if "Cerrados" in estados:
             valores.add(1)
         filtered = filtered[filtered["resuelto"].isin(valores)]
+
+    if origenes and "origen" in filtered.columns:
+        filtered = filtered[filtered["origen"].isin(origenes)]
 
     return filtered

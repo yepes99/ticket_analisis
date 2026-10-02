@@ -5,12 +5,14 @@ Dashboard Jira Pro - pagina interna (Web Admin y Soporte).
 from datetime import datetime, timedelta
 from io import BytesIO
 import math
+import pandas as pd
 import streamlit as st
 
 import busqueda
 import config
 import framework
 import historial
+import origen as origen_mod
 from auth import check_authentication, render_logout_button
 from bono import detectar_bonos_sin_cliente
 from process import leer_config_jira
@@ -225,7 +227,7 @@ render_hero_header(
 panel_busqueda = st.container()
 ficha_ticket = st.container()
 
-clientes_filter, asignadores_filter, sizes_filter, estados_filter = render_filters(df)
+clientes_filter, asignadores_filter, sizes_filter, estados_filter, origenes_filter = render_filters(df)
 
 filtered = apply_filters(
     df,
@@ -233,6 +235,7 @@ filtered = apply_filters(
     asignadores=asignadores_filter,
     sizes=sizes_filter,
     estados=estados_filter,
+    origenes=origenes_filter,
 )
 filtered = apply_resolution_hour_overrides(filtered, solicitudes.obtener_overrides_horas_aprobados())
 
@@ -403,17 +406,74 @@ kpi_grid(
 # Cada tarjeta de arriba es clicable: el boton de debajo abre el listado
 # de tickets detras de ese numero, para no tener que ir a buscarlo a mano
 # mas abajo en el dashboard.
+def _mascara(columna, valor):
+    """
+    Mascara booleana segura para el drilldown: si la columna no existe
+    (datos antiguos en sesion, consulta rara), no selecciona nada en vez
+    de reventar al comparar None con un valor.
+    """
+    if columna not in filtered.columns:
+        return pd.Series(False, index=filtered.index)
+    return filtered[columna].eq(valor)
+
+
 DRILLDOWN_KPIS = {
-    "resueltas": ("✅ Ver resueltas", "Tareas resueltas", filtered.get("resuelto") == 1),
-    "abiertas": ("🟡 Ver abiertas", "Tareas abiertas", filtered.get("resuelto") == 0),
+    "resueltas": ("✅ Ver resueltas", "Tareas resueltas", _mascara("resuelto", 1)),
+    "abiertas": ("🟡 Ver abiertas", "Tareas abiertas", _mascara("resuelto", 0)),
+    "tracker": (
+        "💬 Ver tareas de tracker",
+        "Tareas de tracker ticket (entradas desde Intercom)",
+        _mascara("origen", origen_mod.INTERCOM),
+    ),
+    "internas": (
+        "🛠️ Ver tareas internas",
+        "Tareas internas (creadas directamente en Jira)",
+        _mascara("origen", origen_mod.JIRA),
+    ),
 }
 
-drill_cols = st.columns(2)
-for col, (drill_key, (etiqueta, _, _)) in zip(drill_cols, DRILLDOWN_KPIS.items()):
-    if col.button(etiqueta, key=f"drill_{drill_key}", width="stretch"):
-        actual = st.session_state.get("kpi_drilldown")
-        st.session_state["kpi_drilldown"] = None if actual == drill_key else drill_key
 
+def boton_drilldown(contenedor, clave):
+    """Boton que abre (o cierra, si ya estaba abierto) el listado de ese grupo."""
+    if contenedor.button(DRILLDOWN_KPIS[clave][0], key=f"drill_{clave}", width="stretch"):
+        actual = st.session_state.get("kpi_drilldown")
+        st.session_state["kpi_drilldown"] = None if actual == clave else clave
+
+
+col_izq, col_der = st.columns(2)
+boton_drilldown(col_izq, "resueltas")
+boton_drilldown(col_der, "abiertas")
+
+# El total de arriba, partido en dos: lo que entra por Intercom como
+# tracker ticket y lo que el equipo abre a mano en Jira.
+resumen_origen = origen_mod.resumen_origen(filtered)
+pct_tracker = resumen_origen["pct_intercom"]
+pct_interna = resumen_origen["pct_jira"]
+
+kpi_grid(
+    [
+        (
+            "💬 Tareas de tracker ticket",
+            str(resumen_origen["intercom"]),
+            f"Entran desde Intercom · {pct_tracker}% del total" if pct_tracker is not None else "Sin dato de origen",
+            "",
+        ),
+        (
+            "🛠️ Tareas internas",
+            str(resumen_origen["jira"]),
+            f"Creadas directamente en Jira · {pct_interna}% del total" if pct_interna is not None else "Sin dato de origen",
+            "",
+        ),
+    ],
+    columns=2,
+)
+
+col_izq, col_der = st.columns(2)
+boton_drilldown(col_izq, "tracker")
+boton_drilldown(col_der, "internas")
+
+# Un unico panel de resultados, debajo de todos los botones: asi el listado
+# sale siempre en el mismo sitio, se pulse el boton que se pulse.
 drilldown_activo = st.session_state.get("kpi_drilldown")
 if drilldown_activo:
     _, titulo, mascara = DRILLDOWN_KPIS[drilldown_activo]
@@ -422,8 +482,11 @@ if drilldown_activo:
     if subset.empty:
         empty_state("No hay tareas en este grupo para el periodo/filtros actuales.")
     else:
+        tabla_drill = subset.copy()
+        if "origen" in tabla_drill.columns:
+            tabla_drill["origen"] = tabla_drill["origen"].map(origen_mod.etiqueta)
         st.dataframe(
-            subset,
+            tabla_drill,
             width="stretch",
             hide_index=True,
             column_config={
@@ -432,6 +495,7 @@ if drilldown_activo:
                 "cliente": "Cliente",
                 "asignado_a": "Técnico",
                 "estado": "Estado",
+                "origen": stcc.TextColumn("Origen", width="medium"),
                 "prioridad": "Prioridad",
                 "size": "Tamaño",
                 "fecha_creacion": stcc.DatetimeColumn("Creado", format="DD/MM/YYYY"),
@@ -440,9 +504,9 @@ if drilldown_activo:
             },
             column_order=[
                 c for c in [
-                    "ticket_id", "resumen", "cliente", "asignado_a", "estado",
+                    "ticket_id", "resumen", "cliente", "asignado_a", "estado", "origen",
                     "prioridad", "size", "fecha_creacion", "fecha_resolucion", "horas_resolucion",
-                ] if c in subset.columns
+                ] if c in tabla_drill.columns
             ],
         )
 
@@ -499,7 +563,6 @@ if not ranking.empty:
     )
 else:
     empty_state("No hay técnicos con datos para los filtros seleccionados.")
-
 
 # =========================
 # BACKLOG — Tareas sin iniciar

@@ -310,6 +310,7 @@ def calculate_client_ticket_detail(df, cliente):
         "tipo_producto",
         "estado",
         "resuelto",
+        "origen",
         "prioridad",
         "size",
         "asignado_a",

@@ -10,6 +10,7 @@ import tomllib
 from bono import completar_bono_horas
 from categorias import completar_categorias
 from cliente import completar_cliente
+from origen import completar_origen
 from sla import completar_sla
 
 
@@ -33,6 +34,8 @@ JIRA_BASE_FIELDS = [
     "project",
     "description",
     "parent",
+    "creator",
+    "reporter",
 ]
 
 # Prefijos del resumen del ticket "Principal" (campo Parent de Jira) que
@@ -117,6 +120,8 @@ JIRA_COLUMNS = [
     "presupuesto_cliente",
     "plan_servicio",
     "tipo_producto",
+    "creador",
+    "origen",
     "es_wordpress",
     "principal",
     "historial_estados",
@@ -219,6 +224,8 @@ def procesar_tickets_jira(df):
     df = completar_sla(df)
 
     df = completar_bono_horas(df)
+
+    df = completar_origen(df)
 
     df = completar_fechas_analiticas(df)
 
@@ -646,7 +653,20 @@ def transformar_payload_jira(payload):
                     "displayName",
                 ),
 
-                "informador": None,
+                # El informador se cambia a mano despues de crear el
+                # ticket; el creador no se puede cambiar en Jira, y por eso
+                # sirve para saber de donde salio (ver completar_origen).
+                "informador": extraer_propiedad_jira(
+                    fields.get("reporter"),
+                    "displayName",
+                ),
+
+                "creador": extraer_propiedad_jira(
+                    fields.get("creator"),
+                    "displayName",
+                ),
+
+                "origen": None,
 
                 "fecha_creacion": fields.get(
                     "created"

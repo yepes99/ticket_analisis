@@ -99,7 +99,7 @@ if st.session_state["clientes_df"] is None:
     st.stop()
 
 df = st.session_state["clientes_df"]
-clientes_filter, asignadores_filter, sizes_filter, estados_filter = render_filters(df)
+clientes_filter, asignadores_filter, sizes_filter, estados_filter, origenes_filter = render_filters(df)
 
 filtered = apply_filters(
     df,
@@ -107,6 +107,7 @@ filtered = apply_filters(
     asignadores=asignadores_filter,
     sizes=sizes_filter,
     estados=estados_filter,
+    origenes=origenes_filter,
 )
 filtered = apply_resolution_hour_overrides(filtered, solicitudes.obtener_overrides_horas_aprobados())
 

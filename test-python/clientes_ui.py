@@ -17,6 +17,7 @@ import bono
 import config
 import historial
 import limites
+import origen as origen_mod
 import presupuesto as presu
 import solicitudes
 from charts import create_top_clients_chart
@@ -298,6 +299,10 @@ TICKETS_COLUMN_CONFIG = {
     "plan_servicio": "Plan",
     "tipo_producto": "Tipo",
     "estado": "Estado",
+    "origen": stcc.TextColumn(
+        "Origen",
+        help="De donde entro el ticket: 💬 de una conversacion de Intercom, 🛠️ creado directamente en Jira.",
+    ),
     "prioridad": "Prioridad",
     "size": "Tamaño",
     "asignado_a": "Tecnico",
@@ -332,7 +337,7 @@ TICKETS_COLUMN_CONFIG = {
 # tambien columnas internas sin etiqueta (consumo_presupuesto, los
 # sla_*_cumple, dias_resolucion...), que es lo que la hacia ilegible.
 TICKETS_COLUMN_ORDER = [
-    "ticket_id", "resumen", "estado", "prioridad", "size", "asignado_a",
+    "ticket_id", "resumen", "estado", "origen", "prioridad", "size", "asignado_a",
     "fecha_creacion", "fecha_resolucion",
     "horas_resolucion", "horas_trabajo_real", "horas_pending_info",
     "presupuesto_cliente", "desviacion_presupuesto",
@@ -861,6 +866,8 @@ def render_tickets_cliente(detalle_df, cliente_seleccionado, vista_resumida):
     # El tono se calcula con los valores numericos de origen, antes de
     # formatear el presupuesto a texto (si no, "6.0 h" ya no es un numero).
     tabla_historial = detalle_df.copy()
+    if "origen" in tabla_historial.columns:
+        tabla_historial["origen"] = tabla_historial["origen"].map(origen_mod.etiqueta)
     tonos = tabla_historial.apply(
         lambda fila: presu.presupuesto_tono(fila.get("presupuesto_cliente"), fila.get("horas_trabajo_real"))[0],
         axis=1,
