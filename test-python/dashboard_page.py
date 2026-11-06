@@ -200,7 +200,7 @@ st.sidebar.caption("Los datos se consultan directamente desde Jira.")
 if st.session_state["jira_df"] is None:
     render_hero_header(
         title="Dashboard Web” Equipo de Soporte",
-        description="Seguimiento de tareas, cumplimiento de SLA y rendimiento del equipo: Leslie Jara · Carmen Yepes · Jorge Gallego.",
+        description="Seguimiento de tareas, cumplimiento de SLA y rendimiento del equipo: Leslie Jara · Carmen Yepes · Jorge Gallego · Alejandro Poveda.",
         timestamp=datetime.now().strftime(config.DATE_FORMAT),
     )
     st.info("Elige el periodo en la barra lateral para consultar Jira.")
@@ -217,7 +217,7 @@ st.sidebar.success(f"{len(df)} tickets cargados desde {source}.")
 fecha_dashboard = datetime.now().strftime(config.DATE_FORMAT)
 render_hero_header(
     title="Dashboard Web — Equipo de Soporte",
-    description="Seguimiento de tareas, cumplimiento de SLA y rendimiento del equipo: Leslie Jara · Carmen Yepes · Jorge Gallego.",
+    description="Seguimiento de tareas, cumplimiento de SLA y rendimiento del equipo: Leslie Jara · Carmen Yepes · Jorge Gallego · Alejandro Poveda.",
     timestamp=fecha_dashboard,
 )
 
@@ -514,7 +514,7 @@ kpi_grid(
     [
         ("Tiempo medio resolución", f"{kpis['dias_resolucion_promedio']} días", "Media de días desde creación hasta cierre", ""),
         ("Clientes activos", kpis['total_clientes'], "Clientes con tareas en este período", ""),
-        ("Técnicos", kpis['total_tecnicos'], "Leslie Jara · Carmen Yepes · Jorge Gallego", ""),
+        ("Técnicos", kpis['total_tecnicos'], "Leslie Jara · Carmen Yepes · Jorge Gallego · Alejandro Poveda", ""),
     ],
     secondary=True,
 )
@@ -528,7 +528,7 @@ kpi_grid(
 # variacion real de un periodo a otro: quien tarda mas o menos ahora mismo.
 section_title(
     "👥 Rendimiento por técnico",
-    "Comparativa entre Leslie Jara, Carmen Yepes y Jorge Gallego: volumen de tareas, resueltas, tiempo de resolución y cumplimiento de SLA.",
+    "Comparativa entre Leslie Jara, Carmen Yepes, Jorge Gallego y Alejandro Poveda: volumen de tareas, resueltas, tiempo de resolución y cumplimiento de SLA.",
 )
 
 st.caption(
@@ -646,7 +646,7 @@ resumen_fw = framework.resumen_fw(fw_df)
 
 if resumen_fw["total"] == 0:
     empty_state(
-        "Ninguna tarea de Framework Webplus asignada a Leslie Jara, Carmen Yepes o Jorge Gallego "
+        "Ninguna tarea de Framework Webplus asignada a Leslie Jara, Carmen Yepes, Jorge Gallego o Alejandro Poveda "
         "en el periodo y filtros actuales."
     )
 else:

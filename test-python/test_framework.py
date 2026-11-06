@@ -64,7 +64,7 @@ class TareasPorTecnicoTest(unittest.TestCase):
         # Carmen no tiene tareas de FW: tiene que salir con 0, no ausente,
         # para que en la comparativa se lea "no ha tocado el framework".
         conteo = framework.tareas_por_tecnico(framework.filtrar_equipo(_df(TAREAS)))
-        self.assertEqual(conteo, {"Leslie Jara": 1, "Carmen Yepes": 0, "Jorge Gallego": 2})
+        self.assertEqual(conteo, {"Leslie Jara": 1, "Carmen Yepes": 0, "Jorge Gallego": 2, "Alejandro Poveda": 0})
 
     def test_vacio_devuelve_todos_a_cero(self):
         self.assertEqual(set(framework.tareas_por_tecnico(None).values()), {0})
