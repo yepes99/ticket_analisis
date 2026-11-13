@@ -53,7 +53,7 @@ def filtrar_equipo(df):
     Deja solo las tareas de FW asignadas al equipo de soporte, sin Epics.
 
     El proyecto Framework Webplus lo comparten varios equipos; aqui solo
-    interesa lo que consume tiempo de Leslie, Carmen y Jorge.
+    interesa lo que consume tiempo de Carmen y Alejandro.
     """
     if df is None or df.empty or "asignado_a" not in df.columns:
         return df.iloc[0:0] if df is not None else pd.DataFrame()

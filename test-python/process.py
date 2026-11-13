@@ -125,6 +125,7 @@ JIRA_COLUMNS = [
     "es_wordpress",
     "principal",
     "historial_estados",
+    "historial_asignaciones",
 ]
 
 SPANISH_MONTHS = {
@@ -740,6 +741,7 @@ def transformar_payload_jira(payload):
                 ),
 
                 "historial_estados": extraer_historial_estados(issue),
+                "historial_asignaciones": extraer_historial_campo(issue, "assignee"),
             }
         )
 
@@ -837,6 +839,17 @@ def extraer_historial_estados(issue):
     tiempo paso en "Pending Info" y cuando "se cogio" el ticket (sale de
     Backlog) -- ver sla.completar_metricas_resolucion.
     """
+    return extraer_historial_campo(issue, "status")
+
+
+def extraer_historial_campo(issue, campo):
+    """
+    Cambios de un campo del ticket segun el changelog (requiere
+    expand=changelog), ordenados por fecha: lista de {fecha, de, a} con los
+    valores legibles (nombre del estado, nombre de la persona...). Con
+    campo="assignee" da el historial de asignaciones, que se usa para medir
+    la resolucion desde que se asigna el ticket al tecnico.
+    """
     historias = issue.get("changelog", {}).get("histories", [])
     cambios = []
 
@@ -845,7 +858,7 @@ def extraer_historial_estados(issue):
         if fecha is None:
             continue
         for item in historia.get("items", []):
-            if item.get("field") == "status":
+            if item.get("field") == campo:
                 cambios.append(
                     {
                         "fecha": fecha,

@@ -37,7 +37,7 @@ PAGE_CONFIG = {
 }
 
 # Técnicos permitidos (filtro y cálculo restringido a este conjunto)
-TECNICOS_PERMITIDOS = ["Leslie Jara", "Carmen Yepes", "Jorge Gallego", "Alejandro Poveda"]
+TECNICOS_PERMITIDOS = ["Carmen Yepes", "Alejandro Poveda"]
 
 # Filtros
 FILTER_COLUMNS = {

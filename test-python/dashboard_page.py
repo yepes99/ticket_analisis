@@ -23,6 +23,7 @@ from data import (
 )
 from report import generate_excel_report, generate_pdf_report
 from ui_components import (
+    render_selector_periodo,
     render_hero_header,
     section_title,
     empty_state,
@@ -40,6 +41,7 @@ from metrics import (
     calculate_status_summary,
     calculate_priority_summary,
     calculate_reopened_tickets,
+    mascaras_periodo,
 )
 import solicitudes
 from clientes_ui import (
@@ -55,7 +57,6 @@ from charts import (
     create_priority_bar_chart,
     create_tecnico_carga_chart,
 )
-from periodos import resolve_query_dates, available_years, PERIODOS
 from backlog_metrics import calculate_backlog_detalle
 import streamlit.column_config as stcc
 
@@ -142,29 +143,7 @@ if "jira_backlog_df" not in st.session_state:
 if "jira_fw_df" not in st.session_state:
     st.session_state["jira_fw_df"] = None
 
-periodo = st.sidebar.selectbox(
-    "Periodo",
-    PERIODOS,
-)
-selected_year = datetime.now().year
-if periodo == "Ano":
-    selected_year = st.sidebar.selectbox("Ano", available_years())
-custom_range = None
-if periodo == "Personalizado":
-    today = datetime.now().date()
-    custom_range = st.sidebar.date_input(
-        "Desde / hasta",
-        value=(today - timedelta(days=30), today),
-        max_value=today,
-    )
-    if len(custom_range) != 2:
-        st.sidebar.warning("Selecciona una fecha inicial y una fecha final.")
-        st.stop()
-    if custom_range[0] > custom_range[1]:
-        st.sidebar.error("La fecha inicial debe ser anterior o igual a la fecha final.")
-        st.stop()
-
-query_start_date, query_end_date = resolve_query_dates(periodo, selected_year, custom_range)
+query_start_date, query_end_date = render_selector_periodo("dashboard")
 
 if st.sidebar.button("Consultar Jira", type="primary", width="stretch"):
     with st.spinner("Consultando Jira..."):
@@ -186,6 +165,11 @@ if st.sidebar.button("Consultar Jira", type="primary", width="stretch"):
             end_date=query_end_date,
             jql=framework.leer_fw_jql(jira_config),
         )
+        # Rango con el que se cargaron los datos: los KPI de "creadas en el
+        # periodo" / "resueltas en el periodo" se calculan contra el, no
+        # contra lo que marque ahora el selector (puede haber cambiado sin
+        # volver a consultar).
+        st.session_state["jira_rango"] = (query_start_date, query_end_date)
         inicio_label = query_start_date.strftime("%d/%m/%Y") if query_start_date else "el origen"
         periodo_label = f"{inicio_label} - {query_end_date.strftime('%d/%m/%Y')}"
         st.session_state["jira_source"] = f"Jira ({periodo_label})"
@@ -200,7 +184,7 @@ st.sidebar.caption("Los datos se consultan directamente desde Jira.")
 if st.session_state["jira_df"] is None:
     render_hero_header(
         title="Dashboard Web” Equipo de Soporte",
-        description="Seguimiento de tareas, cumplimiento de SLA y rendimiento del equipo: Leslie Jara · Carmen Yepes · Jorge Gallego · Alejandro Poveda.",
+        description="Seguimiento de tareas, cumplimiento de SLA y rendimiento del equipo: Carmen Yepes · Alejandro Poveda.",
         timestamp=datetime.now().strftime(config.DATE_FORMAT),
     )
     st.info("Elige el periodo en la barra lateral para consultar Jira.")
@@ -208,6 +192,12 @@ if st.session_state["jira_df"] is None:
 
 df = st.session_state["jira_df"]
 source = st.session_state.get("jira_source") or "Jira"
+rango_inicio, rango_fin = st.session_state.get("jira_rango") or (None, None)
+# "Todo el historico" no tiene inicio: todo lo cargado cuenta como del periodo.
+hay_rango = rango_inicio is not None
+rango_label = (
+    f"{rango_inicio.strftime('%d/%m')}–{rango_fin.strftime('%d/%m')}" if hay_rango else ""
+)
 st.sidebar.success(f"{len(df)} tickets cargados desde {source}.")
 
 
@@ -217,7 +207,7 @@ st.sidebar.success(f"{len(df)} tickets cargados desde {source}.")
 fecha_dashboard = datetime.now().strftime(config.DATE_FORMAT)
 render_hero_header(
     title="Dashboard Web — Equipo de Soporte",
-    description="Seguimiento de tareas, cumplimiento de SLA y rendimiento del equipo: Leslie Jara · Carmen Yepes · Jorge Gallego · Alejandro Poveda.",
+    description="Seguimiento de tareas, cumplimiento de SLA y rendimiento del equipo: Carmen Yepes · Alejandro Poveda.",
     timestamp=fecha_dashboard,
 )
 
@@ -314,7 +304,7 @@ st.sidebar.caption("Descarga el resumen del periodo y los filtros seleccionados.
 st.sidebar.caption(f"Incluye {filtered['ticket_id'].nunique()} bugs Jira únicos.")
 
 try:
-    kpis_export = calculate_sla_kpis(filtered)
+    kpis_export = calculate_sla_kpis(filtered, rango_inicio if hay_rango else None, rango_fin if hay_rango else None)
     trend_export = calculate_ticket_trends(filtered)
     sla_size_export = calculate_sla_size_comparison(filtered)
     ranking_export = calculate_technician_ranking(filtered)
@@ -358,11 +348,15 @@ except Exception as exc:
 section_title("Resumen global", "Visión general de todas las tareas del equipo en el período cargado")
 
 try:
-    kpis = calculate_sla_kpis(filtered)
+    kpis = calculate_sla_kpis(filtered, rango_inicio if hay_rango else None, rango_fin if hay_rango else None)
 except Exception:
     # En un DataFrame vacío o con columnas incompletas,
     # devolvemos valores por defecto para que la UI no falle.
     kpis = {
+        "tickets_creados_periodo": 0,
+        "tickets_creados_antes": 0,
+        "resueltos_creados_periodo": 0,
+        "abiertos_creados_periodo": 0,
         "total_tickets": 0,
         "sla_prioridad": 0,
         "sla_size": 0,
@@ -376,9 +370,54 @@ except Exception:
         "total_tecnicos": 0,
     }
 
+def _num(valor):
+    return f"{valor:,}".replace(",", ".")
+
+
+# Desglose de cada tarjeta: la consulta trae lo que tuvo actividad en el
+# periodo, asi que se separa lo creado dentro del rango (lo que cuenta para
+# los KPI de entrada) de lo creado antes y movido en el periodo.
+mascara_creadas, mascara_resueltas_periodo = mascaras_periodo(
+    filtered, rango_inicio if hay_rango else None, rango_fin if hay_rango else None
+)
+
+if hay_rango:
+    sub_creadas = f"Creadas del {rango_label}"
+    if "origen" in filtered.columns:
+        creadas_tracker = int((mascara_creadas & filtered["origen"].eq(origen_mod.INTERCOM).fillna(False)).sum())
+        creadas_internas = int((mascara_creadas & filtered["origen"].eq(origen_mod.JIRA).fillna(False)).sum())
+        sub_creadas += f" · {_num(creadas_tracker)} tracker · {_num(creadas_internas)} internas"
+    resueltos_antes = kpis["tickets_resueltos"] - kpis["resueltos_creados_periodo"]
+    sub_resueltas = (
+        f"Cerradas del {rango_label} · {_num(kpis['resueltos_creados_periodo'])} creadas en el periodo · "
+        f"{_num(resueltos_antes)} de antes"
+    )
+    abiertos_antes = kpis["tickets_abiertos"] - kpis["abiertos_creados_periodo"]
+    sub_abiertas = (
+        f"Aún no finalizadas · {_num(kpis['abiertos_creados_periodo'])} creadas en el periodo · "
+        f"{_num(abiertos_antes)} de antes"
+    )
+else:
+    sub_creadas = "Sin fecha de inicio: cuenta todo lo cargado"
+    sub_resueltas = "Estado Finalizada"
+    sub_abiertas = "Aún no finalizadas"
+
+# Fila 1: volumen. "Creadas en el periodo" es la cifra de entrada que se usa
+# para los KPI (no se muestra el total cargado: mezcla tareas creadas antes
+# que solo cambiaron de estado en el periodo).
 kpi_grid(
     [
-        ("Total tareas", f"{kpis['total_tickets']:,}".replace(",", "."), "Tareas cargadas desde Jira", ""),
+        ("📥 Creadas en el periodo", _num(kpis['tickets_creados_periodo']), sub_creadas, "highlight"),
+        ("Tareas resueltas", _num(kpis['tickets_resueltos']), sub_resueltas, "success"),
+        ("Tareas abiertas", _num(kpis['tickets_abiertos']), sub_abiertas, "warning"),
+    ],
+    secondary=True,
+)
+fila_botones = st.columns(3)
+
+# Fila 2: cumplimiento de SLA.
+kpi_grid(
+    [
         (
             "SLA prioridad",
             f"{kpis['sla_prioridad']}%",
@@ -397,10 +436,8 @@ kpi_grid(
             "Cumplimiento combinado (verde ≥80%, naranja 50-79%, rojo <50%)",
             sla_tone(kpis['sla_global']),
         ),
-        ("Tareas resueltas", f"{kpis['tickets_resueltos']:,}".replace(",", "."), "Estado Finalizada", "success"),
-        ("Tareas abiertas", f"{kpis['tickets_abiertos']:,}".replace(",", "."), "Aún no finalizadas", "warning"),
     ],
-    columns=2,
+    secondary=True,
 )
 
 # Cada tarjeta de arriba es clicable: el boton de debajo abre el listado
@@ -418,7 +455,16 @@ def _mascara(columna, valor):
 
 
 DRILLDOWN_KPIS = {
-    "resueltas": ("✅ Ver resueltas", "Tareas resueltas", _mascara("resuelto", 1)),
+    "creadas": (
+        "📥 Ver creadas en el periodo",
+        f"Tareas creadas en el periodo ({rango_label})" if hay_rango else "Tareas creadas",
+        mascara_creadas,
+    ),
+    "resueltas": (
+        "✅ Ver resueltas",
+        f"Tareas resueltas del {rango_label}" if hay_rango else "Tareas resueltas",
+        mascara_resueltas_periodo,
+    ),
     "abiertas": ("🟡 Ver abiertas", "Tareas abiertas", _mascara("resuelto", 0)),
     "tracker": (
         "💬 Ver tareas de tracker",
@@ -440,9 +486,12 @@ def boton_drilldown(contenedor, clave):
         st.session_state["kpi_drilldown"] = None if actual == clave else clave
 
 
-col_izq, col_der = st.columns(2)
-boton_drilldown(col_izq, "resueltas")
-boton_drilldown(col_der, "abiertas")
+# Botones debajo de su tarjeta de la fila de volumen (el total no tiene
+# listado propio: son todas). Se pintan aqui porque necesitan DRILLDOWN_KPIS,
+# pero van en las columnas reservadas justo debajo de las tarjetas.
+boton_drilldown(fila_botones[0], "creadas")
+boton_drilldown(fila_botones[1], "resueltas")
+boton_drilldown(fila_botones[2], "abiertas")
 
 # El total de arriba, partido en dos: lo que entra por Intercom como
 # tracker ticket y lo que el equipo abre a mano en Jira.
@@ -450,18 +499,31 @@ resumen_origen = origen_mod.resumen_origen(filtered)
 pct_tracker = resumen_origen["pct_intercom"]
 pct_interna = resumen_origen["pct_jira"]
 
+
+def _desglose_origen(valor_origen):
+    """' · N creadas en el periodo · M de antes' para las tarjetas de origen."""
+    if not hay_rango or "origen" not in filtered.columns:
+        return ""
+    del_origen = filtered["origen"].eq(valor_origen).fillna(False)
+    creadas = int((del_origen & mascara_creadas).sum())
+    antes = int((del_origen & ~mascara_creadas).sum())
+    return f" · {_num(creadas)} creadas en el periodo · {_num(antes)} de antes"
+
+
 kpi_grid(
     [
         (
             "💬 Tareas de tracker ticket",
             str(resumen_origen["intercom"]),
-            f"Entran desde Intercom · {pct_tracker}% del total" if pct_tracker is not None else "Sin dato de origen",
+            (f"Entran desde Intercom · {pct_tracker}% del total" if pct_tracker is not None else "Sin dato de origen")
+            + _desglose_origen(origen_mod.INTERCOM),
             "",
         ),
         (
             "🛠️ Tareas internas",
             str(resumen_origen["jira"]),
-            f"Creadas directamente en Jira · {pct_interna}% del total" if pct_interna is not None else "Sin dato de origen",
+            (f"Creadas directamente en Jira · {pct_interna}% del total" if pct_interna is not None else "Sin dato de origen")
+            + _desglose_origen(origen_mod.JIRA),
             "",
         ),
     ],
@@ -498,14 +560,19 @@ if drilldown_activo:
                 "origen": stcc.TextColumn("Origen", width="medium"),
                 "prioridad": "Prioridad",
                 "size": "Tamaño",
-                "fecha_creacion": stcc.DatetimeColumn("Creado", format="DD/MM/YYYY"),
-                "fecha_resolucion": stcc.DatetimeColumn("Resuelto", format="DD/MM/YYYY"),
-                "horas_resolucion": stcc.NumberColumn("Horas resolución", format="%.1f h"),
+                "fecha_creacion": stcc.DatetimeColumn("Creado", format="DD/MM/YYYY HH:mm"),
+                "fecha_asignacion": stcc.DatetimeColumn("Asignado", format="DD/MM/YYYY HH:mm"),
+                "fecha_resolucion": stcc.DatetimeColumn("Resuelto", format="DD/MM/YYYY HH:mm"),
+                "horas_resolucion": stcc.NumberColumn(
+                    "Horas resolución",
+                    format="%.1f h",
+                    help="Desde que se asigna al técnico hasta que se cierra (horas laborables, sin fines de semana ni Pending Info).",
+                ),
             },
             column_order=[
                 c for c in [
                     "ticket_id", "resumen", "cliente", "asignado_a", "estado", "origen",
-                    "prioridad", "size", "fecha_creacion", "fecha_resolucion", "horas_resolucion",
+                    "prioridad", "size", "fecha_creacion", "fecha_asignacion", "fecha_resolucion", "horas_resolucion",
                 ] if c in tabla_drill.columns
             ],
         )
@@ -514,7 +581,7 @@ kpi_grid(
     [
         ("Tiempo medio resolución", f"{kpis['dias_resolucion_promedio']} días", "Media de días desde creación hasta cierre", ""),
         ("Clientes activos", kpis['total_clientes'], "Clientes con tareas en este período", ""),
-        ("Técnicos", kpis['total_tecnicos'], "Leslie Jara · Carmen Yepes · Jorge Gallego · Alejandro Poveda", ""),
+        ("Técnicos", kpis['total_tecnicos'], "Carmen Yepes · Alejandro Poveda", ""),
     ],
     secondary=True,
 )
@@ -528,7 +595,7 @@ kpi_grid(
 # variacion real de un periodo a otro: quien tarda mas o menos ahora mismo.
 section_title(
     "👥 Rendimiento por técnico",
-    "Comparativa entre Leslie Jara, Carmen Yepes, Jorge Gallego y Alejandro Poveda: volumen de tareas, resueltas, tiempo de resolución y cumplimiento de SLA.",
+    "Comparativa entre Carmen Yepes y Alejandro Poveda: volumen de tareas, resueltas, tiempo de resolución y cumplimiento de SLA.",
 )
 
 st.caption(
@@ -646,7 +713,7 @@ resumen_fw = framework.resumen_fw(fw_df)
 
 if resumen_fw["total"] == 0:
     empty_state(
-        "Ninguna tarea de Framework Webplus asignada a Leslie Jara, Carmen Yepes, Jorge Gallego o Alejandro Poveda "
+        "Ninguna tarea de Framework Webplus asignada a Carmen Yepes o Alejandro Poveda "
         "en el periodo y filtros actuales."
     )
 else:

@@ -10,15 +10,15 @@ def _df(filas):
 
 
 TAREAS = [
-    {"ticket_id": "FW-1", "asignado_a": "Jorge Gallego", "tipo": "Tarea", "resuelto": 1, "dias_resolucion": 17.0},
-    {"ticket_id": "FW-2", "asignado_a": "Jorge Gallego", "tipo": "Tarea", "resuelto": 0, "dias_resolucion": None},
-    {"ticket_id": "FW-3", "asignado_a": "Leslie Jara", "tipo": "Error", "resuelto": 0, "dias_resolucion": None},
+    {"ticket_id": "FW-1", "asignado_a": "Alejandro Poveda", "tipo": "Tarea", "resuelto": 1, "dias_resolucion": 17.0},
+    {"ticket_id": "FW-2", "asignado_a": "Alejandro Poveda", "tipo": "Tarea", "resuelto": 0, "dias_resolucion": None},
+    {"ticket_id": "FW-3", "asignado_a": "Carmen Yepes", "tipo": "Error", "resuelto": 0, "dias_resolucion": None},
     # De otro equipo: no es carga de soporte.
     {"ticket_id": "FW-4", "asignado_a": "Ruben Sales", "tipo": "Tarea", "resuelto": 1, "dias_resolucion": 3.0},
     # Sin asignar.
     {"ticket_id": "FW-5", "asignado_a": None, "tipo": "Tarea", "resuelto": 0, "dias_resolucion": None},
     # Los Epic son contenedores, no trabajo.
-    {"ticket_id": "FW-6", "asignado_a": "Jorge Gallego", "tipo": "Epic", "resuelto": 0, "dias_resolucion": None},
+    {"ticket_id": "FW-6", "asignado_a": "Alejandro Poveda", "tipo": "Epic", "resuelto": 0, "dias_resolucion": None},
 ]
 
 
@@ -51,7 +51,7 @@ class ResumenFwTest(unittest.TestCase):
         self.assertEqual(resumen["tecnicos"], 2)
 
     def test_sin_tareas_resueltas_no_hay_media(self):
-        sin_resolver = _df([{"ticket_id": "FW-9", "asignado_a": "Leslie Jara", "tipo": "Tarea",
+        sin_resolver = _df([{"ticket_id": "FW-9", "asignado_a": "Carmen Yepes", "tipo": "Tarea",
                              "resuelto": 0, "dias_resolucion": None}])
         self.assertIsNone(framework.resumen_fw(sin_resolver)["dias_medios"])
 
@@ -61,10 +61,15 @@ class ResumenFwTest(unittest.TestCase):
 
 class TareasPorTecnicoTest(unittest.TestCase):
     def test_incluye_a_los_que_no_tienen_ninguna(self):
-        # Carmen no tiene tareas de FW: tiene que salir con 0, no ausente,
+        # Sin las tareas de Carmen: tiene que salir con 0, no ausente,
         # para que en la comparativa se lea "no ha tocado el framework".
+        solo_alejandro = [t for t in TAREAS if t["asignado_a"] != "Carmen Yepes"]
+        conteo = framework.tareas_por_tecnico(framework.filtrar_equipo(_df(solo_alejandro)))
+        self.assertEqual(conteo, {"Carmen Yepes": 0, "Alejandro Poveda": 2})
+
+    def test_cuenta_por_tecnico(self):
         conteo = framework.tareas_por_tecnico(framework.filtrar_equipo(_df(TAREAS)))
-        self.assertEqual(conteo, {"Leslie Jara": 1, "Carmen Yepes": 0, "Jorge Gallego": 2, "Alejandro Poveda": 0})
+        self.assertEqual(conteo, {"Carmen Yepes": 1, "Alejandro Poveda": 2})
 
     def test_vacio_devuelve_todos_a_cero(self):
         self.assertEqual(set(framework.tareas_por_tecnico(None).values()), {0})
@@ -77,10 +82,10 @@ class DetalleFwTest(unittest.TestCase):
 
     def test_sin_fecha_de_resolucion_sale_sin_cerrar(self):
         con_fechas = _df([
-            {"ticket_id": "FW-1", "asignado_a": "Leslie Jara", "tipo": "Tarea",
+            {"ticket_id": "FW-1", "asignado_a": "Carmen Yepes", "tipo": "Tarea",
              "fecha_creacion": pd.Timestamp("2026-09-01"), "fecha_resolucion": pd.Timestamp("2026-09-05"),
              "dias_resolucion": 4.0},
-            {"ticket_id": "FW-2", "asignado_a": "Leslie Jara", "tipo": "Tarea",
+            {"ticket_id": "FW-2", "asignado_a": "Carmen Yepes", "tipo": "Tarea",
              "fecha_creacion": pd.Timestamp("2026-09-02"), "fecha_resolucion": None,
              "dias_resolucion": None},
         ])

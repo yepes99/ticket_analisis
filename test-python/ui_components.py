@@ -182,3 +182,65 @@ def render_chart_wrapper(fig, use_container_width=True, key=None):
         key=key,
     )
     st.markdown("</div>", unsafe_allow_html=True)
+
+
+def render_selector_periodo(key_prefix):
+    """
+    Selector de periodo de la barra lateral (compartido por Dashboard y
+    Clientes). Devuelve (start_date, end_date) o para la pagina si las
+    fechas personalizadas no son validas.
+
+    En "Personalizado" van dos campos separados (Desde / Hasta) en formato
+    dd/mm/aaaa, en vez de un unico calendario de rango (habia que pinchar
+    dos veces y no quedaba claro que faltaba la segunda fecha). Debajo se
+    ensena siempre el rango exacto que se va a consultar.
+    """
+    from periodos import (
+        PERIODOS,
+        available_years,
+        describir_rango,
+        etiqueta_periodo,
+        resolve_query_dates,
+        _lunes,
+    )
+
+    periodo = st.sidebar.selectbox(
+        "Periodo",
+        PERIODOS,
+        format_func=etiqueta_periodo,
+        key=f"{key_prefix}_periodo",
+    )
+
+    hoy = datetime.now().date()
+    selected_year = hoy.year
+    if periodo == "Ano":
+        selected_year = st.sidebar.selectbox("Año", available_years(), key=f"{key_prefix}_year")
+
+    custom_range = None
+    if periodo == "Personalizado":
+        col_desde, col_hasta = st.sidebar.columns(2)
+        desde = col_desde.date_input(
+            "Desde",
+            value=_lunes(hoy),
+            max_value=hoy,
+            format="DD/MM/YYYY",
+            key=f"{key_prefix}_desde",
+        )
+        hasta = col_hasta.date_input(
+            "Hasta",
+            value=hoy,
+            max_value=hoy,
+            format="DD/MM/YYYY",
+            key=f"{key_prefix}_hasta",
+        )
+        if desde is None or hasta is None:
+            st.sidebar.warning("Rellena las dos fechas.")
+            st.stop()
+        if desde > hasta:
+            st.sidebar.error("La fecha «Desde» tiene que ser anterior o igual a «Hasta».")
+            st.stop()
+        custom_range = (desde, hasta)
+
+    start_date, end_date = resolve_query_dates(periodo, selected_year, custom_range)
+    st.sidebar.caption(f"📅 {describir_rango(start_date, end_date)}")
+    return start_date, end_date

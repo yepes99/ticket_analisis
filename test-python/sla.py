@@ -150,7 +150,74 @@ def _analizar_historial_estados(historial, cutoff):
     return horas_pending, fecha_cogido
 
 
-def completar_metricas_resolucion(df):
+def _horas_pending_desde(historial, desde, cutoff):
+    """
+    Horas laborales en Pending Info dentro de [desde, cutoff]: los tramos
+    que empezaron antes de `desde` solo cuentan a partir de `desde`.
+    """
+    if not historial or pd.isna(cutoff) or pd.isna(desde):
+        return 0.0
+
+    horas = 0.0
+    pending_inicio = None
+    for cambio in historial:
+        fecha = cambio.get("fecha")
+        if fecha is None or pd.isna(fecha) or fecha > cutoff:
+            break
+        if cambio.get("a") == ESTADO_PENDING_INFO and pending_inicio is None:
+            pending_inicio = fecha
+        elif cambio.get("de") == ESTADO_PENDING_INFO and pending_inicio is not None:
+            if fecha > desde:
+                horas += horas_laborales(max(pending_inicio, desde), fecha)
+            pending_inicio = None
+
+    if pending_inicio is not None and cutoff > desde:
+        horas += horas_laborales(max(pending_inicio, desde), cutoff)
+    return horas
+
+
+def _fecha_asignacion(asignaciones, fecha_creacion, asignado_actual, cutoff, tecnicos):
+    """
+    Cuando se asigno el ticket al equipo (a uno de `tecnicos`), segun el
+    historial de cambios de "assignee" (lista de {fecha, de, a}):
+    1. Primera vez que se asigna a un tecnico del equipo (antes de `cutoff`).
+    2. Si ya nacio asignado a un tecnico (el primer cambio sale "de" un
+       tecnico, o no hay cambios y tiene asignado), la fecha de creacion.
+    3. Si nunca paso por el equipo, la primera asignacion a cualquiera.
+    4. Sin nada de lo anterior, la fecha de creacion.
+    """
+    if pd.isna(fecha_creacion):
+        return pd.NaT
+
+    cambios = [
+        c for c in (asignaciones if isinstance(asignaciones, list) else [])
+        if c.get("fecha") is not None and not pd.isna(c.get("fecha"))
+        and (pd.isna(cutoff) or c["fecha"] <= cutoff)
+    ]
+
+    if cambios and cambios[0].get("de") in tecnicos:
+        # Nacio asignado a un tecnico del equipo.
+        return fecha_creacion
+
+    for cambio in cambios:
+        if cambio.get("a") in tecnicos:
+            return max(cambio["fecha"], fecha_creacion)
+
+    if cambios and cambios[0].get("de"):
+        # Nacio asignado a alguien de fuera del equipo y nunca paso por el.
+        return fecha_creacion
+    if not cambios and isinstance(asignado_actual, str) and asignado_actual:
+        return fecha_creacion
+
+    for cambio in cambios:
+        if cambio.get("a"):
+            return max(cambio["fecha"], fecha_creacion)
+    return fecha_creacion
+
+
+def completar_metricas_resolucion(df, tecnicos=None):
+    if tecnicos is None:
+        from config import TECNICOS_PERMITIDOS as tecnicos
     df = df.copy()
 
     fecha_creacion = pd.to_datetime(df["fecha_creacion"], errors="coerce")
@@ -214,8 +281,37 @@ def completar_metricas_resolucion(df):
     # Todos los tiempos se cuentan en dias/horas laborales (sin fines de
     # semana, ver horas_laborales): el "Pending Info" ya se resta aparte,
     # asi que no hay doble descuento aunque caiga en fin de semana.
-    df["horas_resolucion"] = horas_laborales(fecha_creacion, fecha_resolucion) - horas_pending
-    df.loc[fecha_resolucion.isna() | fecha_creacion.isna(), "horas_resolucion"] = np.nan
+    # Resolucion: desde que se asigna al tecnico (no desde que se crea) hasta
+    # que se cierra, en horas laborales y sin el tiempo en Pending Info
+    # posterior a la asignacion. Ver _fecha_asignacion.
+    asignaciones = df["historial_asignaciones"] if "historial_asignaciones" in df.columns else pd.Series([None] * len(df), index=df.index)
+    asignado = df["asignado_a"] if "asignado_a" in df.columns else pd.Series([None] * len(df), index=df.index)
+    historiales = df["historial_estados"] if "historial_estados" in df.columns else pd.Series([None] * len(df), index=df.index)
+    fecha_asignacion = pd.to_datetime(
+        pd.Series(
+            [
+                _fecha_asignacion(asig, creado, actual, cutoff, tecnicos)
+                for asig, creado, actual, cutoff in zip(asignaciones, fecha_creacion, asignado, fecha_fin)
+            ],
+            index=df.index,
+            dtype="object",
+        ),
+        errors="coerce",
+    )
+    horas_pending_asignado = pd.Series(
+        [
+            _horas_pending_desde(hist, desde, cutoff)
+            for hist, desde, cutoff in zip(historiales, fecha_asignacion, fecha_fin)
+        ],
+        index=df.index,
+        dtype="float64",
+    )
+    df["fecha_asignacion"] = fecha_asignacion
+
+    df["horas_resolucion"] = (
+        horas_laborales(fecha_asignacion, fecha_resolucion) - horas_pending_asignado
+    ).clip(lower=0)
+    df.loc[fecha_resolucion.isna() | fecha_asignacion.isna(), "horas_resolucion"] = np.nan
     df["horas_resolucion"] = df["horas_resolucion"].round(2)
 
     df["dias_resolucion"] = df["horas_resolucion"] / 24

@@ -24,7 +24,6 @@ import solicitudes
 from auth import check_clientes_authentication, render_logout_button
 from data import apply_filters, render_filters, validate_columns
 from metrics import apply_resolution_hour_overrides
-from periodos import PERIODOS, available_years, resolve_query_dates
 from process import cargar_tickets_jira
 from clientes_ui import (
     filtrar_tickets_clientes_wordpress,
@@ -32,7 +31,7 @@ from clientes_ui import (
     render_historico_cambios,
     render_ranking_clientes,
 )
-from ui_components import empty_state, render_hero_header, section_title
+from ui_components import empty_state, render_hero_header, render_selector_periodo, section_title
 
 
 # =========================
@@ -56,27 +55,7 @@ st.sidebar.caption("Consulta Jira con el token configurado en secretos.")
 if "clientes_df" not in st.session_state:
     st.session_state["clientes_df"] = None
 
-periodo = st.sidebar.selectbox("Periodo", PERIODOS, key="clientes_periodo")
-selected_year = datetime.now().year
-if periodo == "Ano":
-    selected_year = st.sidebar.selectbox("Ano", available_years(), key="clientes_year")
-custom_range = None
-if periodo == "Personalizado":
-    today = datetime.now().date()
-    custom_range = st.sidebar.date_input(
-        "Desde / hasta",
-        value=(today - timedelta(days=30), today),
-        max_value=today,
-        key="clientes_custom_range",
-    )
-    if len(custom_range) != 2:
-        st.sidebar.warning("Selecciona una fecha inicial y una fecha final.")
-        st.stop()
-    if custom_range[0] > custom_range[1]:
-        st.sidebar.error("La fecha inicial debe ser anterior o igual a la fecha final.")
-        st.stop()
-
-query_start_date, query_end_date = resolve_query_dates(periodo, selected_year, custom_range)
+query_start_date, query_end_date = render_selector_periodo("clientes")
 
 if st.sidebar.button("Consultar Jira", type="primary", width="stretch", key="clientes_consultar"):
     with st.spinner("Consultando Jira..."):

@@ -28,7 +28,7 @@ class SlaCasesTest(unittest.TestCase):
                     "fecha_creacion": pd.Timestamp("2026-08-20 10:00"),
                     "fecha_resolucion": pd.Timestamp("2026-08-20 17:00"),
                     "cliente": "A",
-                    "asignado_a": "Leslie Jara",
+                    "asignado_a": "Carmen Yepes",
                 },
                 {
                     "ticket_id": "BAD-1",
@@ -38,7 +38,7 @@ class SlaCasesTest(unittest.TestCase):
                     "fecha_creacion": pd.Timestamp("2026-08-20 10:00"),
                     "fecha_resolucion": pd.Timestamp("2026-08-26 10:00"),
                     "cliente": "A",
-                    "asignado_a": "Leslie Jara",
+                    "asignado_a": "Carmen Yepes",
                 },
                 {
                     "ticket_id": "OPEN-OK",
@@ -68,7 +68,7 @@ class SlaCasesTest(unittest.TestCase):
                     "fecha_creacion": pd.Timestamp("2026-08-15 11:00"),
                     "fecha_resolucion": pd.NaT,
                     "cliente": "C",
-                    "asignado_a": "Jorge Gallego",
+                    "asignado_a": "Alejandro Poveda",
                 },
                 {
                     "ticket_id": "NO-SIZE",
@@ -78,7 +78,7 @@ class SlaCasesTest(unittest.TestCase):
                     "fecha_creacion": pd.Timestamp("2026-08-20 10:00"),
                     "fecha_resolucion": pd.Timestamp("2026-08-20 11:00"),
                     "cliente": "C",
-                    "asignado_a": "Jorge Gallego",
+                    "asignado_a": "Alejandro Poveda",
                 },
             ]
         )

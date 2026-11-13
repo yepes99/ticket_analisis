@@ -361,6 +361,15 @@ div[data-testid="stAppViewContainer"] .stTextInput {
     margin: 0;
 }
 
+/* Tarjeta destacada (p.ej. "Creadas en el periodo", el KPI de entrada). */
+.kpi-card.highlight {
+    background: linear-gradient(135deg, rgba(70, 166, 255, 0.22) 0%, var(--surface) 65%);
+    border: 1px solid rgba(70, 166, 255, 0.55);
+    border-left: 4px solid var(--brand);
+}
+
+.kpi-card.highlight .kpi-value { color: var(--brand-strong); }
+
 .kpi-card.success .kpi-value { color: var(--success); }
 .kpi-card.warning .kpi-value { color: var(--warning); }
 .kpi-card.danger .kpi-value { color: var(--danger); }

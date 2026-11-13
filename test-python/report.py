@@ -25,7 +25,9 @@ def generate_excel_report(kpis, trend_df, sla_size_df, ranking_df, clientes_df, 
             {
                 "KPI": [
                     "Tickets filtrados",
-                    "Tickets resueltos",
+                    "Creados en el periodo",
+                    "Creados antes (con actividad en el periodo)",
+                    "Tickets resueltos en el periodo",
                     "Tickets abiertos",
                     "Tickets incumplidos",
                     "En riesgo SLA",
@@ -38,6 +40,8 @@ def generate_excel_report(kpis, trend_df, sla_size_df, ranking_df, clientes_df, 
                 ],
                 "Valor": [
                     kpis["total_tickets"],
+                    kpis.get("tickets_creados_periodo", kpis["total_tickets"]),
+                    kpis.get("tickets_creados_antes", 0),
                     kpis["tickets_resueltos"],
                     kpis["tickets_abiertos"],
                     kpis["tickets_incumplidos"],
@@ -93,7 +97,9 @@ def generate_pdf_report(kpis, top_clients, top_tech):
 
     kpi_lines = [
         ("Tickets filtrados", kpis["total_tickets"]),
-        ("Tickets resueltos", kpis["tickets_resueltos"]),
+        ("Creados en el periodo", kpis.get("tickets_creados_periodo", kpis["total_tickets"])),
+        ("Creados antes", kpis.get("tickets_creados_antes", 0)),
+        ("Tickets resueltos en el periodo", kpis["tickets_resueltos"]),
         ("Tickets abiertos", kpis["tickets_abiertos"]),
         ("Tickets incumplidos", kpis["tickets_incumplidos"]),
         ("En riesgo SLA", kpis["tickets_en_riesgo"]),

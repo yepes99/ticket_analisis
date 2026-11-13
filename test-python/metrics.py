@@ -42,19 +42,67 @@ REOPENED_TERMS = [
 ]
 
 
-def calculate_sla_kpis(df):
+def _mascara_fecha_en_rango(df, columna, start_date, end_date):
+    """True en las filas cuya fecha (solo el dia) cae en [start_date, end_date]."""
+    if columna not in df.columns:
+        return pd.Series(False, index=df.index)
+    fechas = pd.to_datetime(df[columna], errors="coerce").dt.date
+    mascara = fechas.notna()
+    if start_date is not None:
+        mascara &= fechas >= start_date
+    if end_date is not None:
+        mascara &= fechas <= end_date
+    return mascara.fillna(False).astype(bool)
+
+
+def mascaras_periodo(df, start_date=None, end_date=None):
+    """
+    Devuelve (creadas, resueltas_en_periodo) como mascaras booleanas.
+
+    La consulta a Jira trae los tickets con actividad en el periodo (creados
+    en el rango O que cambiaron de estado en el), asi que no todo lo cargado
+    se creo en el periodo. Para los KPI interesa separar:
+    - creadas: fecha de creacion dentro del rango.
+    - resueltas_en_periodo: finalizadas con fecha de resolucion dentro del
+      rango (no "finalizadas hoy, se cerraran cuando se cerraran").
+    Sin rango (start y end None) todo cuenta como del periodo.
+    """
+    if start_date is None and end_date is None:
+        creadas = pd.Series(True, index=df.index)
+        resueltas = df["resuelto"].eq(1) if "resuelto" in df else pd.Series(False, index=df.index)
+        return creadas, resueltas.fillna(False).astype(bool)
+
+    creadas = _mascara_fecha_en_rango(df, "fecha_creacion", start_date, end_date)
+    resueltas = _mascara_fecha_en_rango(df, "fecha_resolucion", start_date, end_date)
+    if "resuelto" in df:
+        resueltas &= df["resuelto"].eq(1).fillna(False)
+    return creadas, resueltas
+
+
+def calculate_sla_kpis(df, start_date=None, end_date=None):
+    """
+    KPIs del resumen global. Con start_date/end_date, "tickets_resueltos"
+    cuenta solo los cerrados dentro del rango, y se anade el desglose de
+    creadas en el periodo vs. creadas antes (ver mascaras_periodo).
+    """
     total_tickets = len(df)
-    tickets_resueltos = int(df["resuelto"].sum()) if "resuelto" in df else 0
+    creadas, resueltas_periodo = mascaras_periodo(df, start_date, end_date)
+    tickets_resueltos = int(resueltas_periodo.sum())
+    abiertas = df["resuelto"].eq(0).fillna(False) if "resuelto" in df else pd.Series(False, index=df.index)
     dias_promedio = 0.0
     if "dias_resolucion" in df and not df["dias_resolucion"].dropna().empty:
         dias_promedio = float(round(df["dias_resolucion"].mean(skipna=True), 1))
 
     return {
+        "tickets_creados_periodo": int(creadas.sum()),
+        "tickets_creados_antes": int((~creadas).sum()),
+        "resueltos_creados_periodo": int((resueltas_periodo & creadas).sum()),
+        "abiertos_creados_periodo": int((abiertas & creadas).sum()),
         "sla_prioridad": pct(df["sla_prioridad_cumple"]),
         "sla_size": pct(df["sla_size_cumple"]),
         "sla_global": pct(df["sla_global_cumple"]),
         "tickets_resueltos": tickets_resueltos,
-        "tickets_abiertos": total_tickets - tickets_resueltos,
+        "tickets_abiertos": int(abiertas.sum()),
         "tickets_incumplidos": int((df["sla_global_cumple"] == 0).sum()),
         "tickets_en_riesgo": int(df["en_riesgo_sla"].sum()) if "en_riesgo_sla" in df else 0,
         "dias_resolucion_promedio": dias_promedio,
