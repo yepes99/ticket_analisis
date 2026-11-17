@@ -539,11 +539,14 @@ if drilldown_activo:
         tabla_drill = subset.copy()
         if "origen" in tabla_drill.columns:
             tabla_drill["origen"] = tabla_drill["origen"].map(origen_mod.etiqueta)
+        # Numero de fila (1..N) para ir contando y contrastar con Jira/Intercom.
+        tabla_drill.insert(0, "num_fila", range(1, len(tabla_drill) + 1))
         st.dataframe(
             tabla_drill,
             width="stretch",
             hide_index=True,
             column_config={
+                "num_fila": stcc.NumberColumn("#", width="small", format="%d"),
                 "ticket_id": "Ticket",
                 "resumen": stcc.TextColumn("Resumen", width="large"),
                 "cliente": "Cliente",
@@ -563,7 +566,7 @@ if drilldown_activo:
             },
             column_order=[
                 c for c in [
-                    "ticket_id", "resumen", "cliente", "asignado_a", "estado", "origen",
+                    "num_fila", "ticket_id", "resumen", "cliente", "asignado_a", "estado", "origen",
                     "prioridad", "size", "fecha_creacion", "fecha_asignacion", "fecha_resolucion", "horas_resolucion",
                 ] if c in tabla_drill.columns
             ],
