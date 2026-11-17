@@ -82,7 +82,7 @@ def render_filters(df):
             "Origen",
             sorted(df["origen"].dropna().unique()),
             format_func=origen_mod.etiqueta,
-            help="De donde entro el ticket: de una conversacion de Intercom o creado directamente en Jira.",
+            help="Tracker: lleva la etiqueta Intercom o entró por la integración y se pasó a Carmen. Interna: todo lo demás.",
         )
 
     return clientes, asignadores, sizes, estados, origenes

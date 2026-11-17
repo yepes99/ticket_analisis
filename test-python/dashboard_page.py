@@ -475,7 +475,7 @@ DRILLDOWN_KPIS = {
     ),
     "internas": (
         "🛠️ Ver tareas internas",
-        "Tareas internas creadas en el periodo (creadas directamente en Jira)",
+        "Tareas internas creadas en el periodo (no vienen de Intercom)",
         _mascara("origen", origen_mod.JIRA).fillna(False) & mascara_creadas,
     ),
 }
@@ -515,7 +515,7 @@ kpi_grid(
         (
             "🛠️ Tareas internas",
             _num(resumen_origen["jira"]),
-            f"Creadas directamente en Jira · {pct_interna}% {texto_base}" if pct_interna is not None else "Sin dato de origen",
+            f"No vienen de Intercom · {pct_interna}% {texto_base}" if pct_interna is not None else "Sin dato de origen",
             "",
         ),
     ],

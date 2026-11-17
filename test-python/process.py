@@ -36,6 +36,7 @@ JIRA_BASE_FIELDS = [
     "parent",
     "creator",
     "reporter",
+    "labels",
 ]
 
 # Prefijos del resumen del ticket "Principal" (campo Parent de Jira) que
@@ -126,6 +127,7 @@ JIRA_COLUMNS = [
     "principal",
     "historial_estados",
     "historial_asignaciones",
+    "etiquetas",
 ]
 
 SPANISH_MONTHS = {
@@ -666,6 +668,8 @@ def transformar_payload_jira(payload):
                     fields.get("creator"),
                     "displayName",
                 ),
+
+                "etiquetas": list(fields.get("labels") or []),
 
                 "origen": None,
 

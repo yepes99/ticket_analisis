@@ -5,28 +5,52 @@ import pandas as pd
 import origen
 
 
-def _df(creadores):
-    return pd.DataFrame({"ticket_id": [f"WP-{i}" for i in range(len(creadores))], "creador": creadores})
+def _df(creadores, informadores=None, etiquetas=None):
+    n = len(creadores)
+    return pd.DataFrame({
+        "ticket_id": [f"WP-{i}" for i in range(n)],
+        "creador": creadores,
+        "informador": informadores if informadores is not None else ["Carmen Yepes"] * n,
+        "etiquetas": etiquetas if etiquetas is not None else [[] for _ in range(n)],
+    })
 
 
 class CompletarOrigenTest(unittest.TestCase):
-    def test_la_cuenta_de_integracion_es_intercom(self):
-        df = origen.completar_origen(_df(["Admin Avantio"]))
+    def test_integracion_y_pasado_a_carmen_es_intercom(self):
+        df = origen.completar_origen(_df(["Admin Avantio"], ["Carmen Yepes"]))
         self.assertEqual(df["origen"].iloc[0], origen.INTERCOM)
 
-    def test_una_persona_es_jira_directo(self):
-        df = origen.completar_origen(_df(["Carmen Yepes"]))
+    def test_integracion_pasado_a_otra_persona_es_interna(self):
+        # Caso real WP-31529: Admin Avantio -> Jennifer Urbas, sin etiqueta.
+        df = origen.completar_origen(_df(["Admin Avantio"], ["Jennifer Urbas"]))
+        self.assertEqual(df["origen"].iloc[0], origen.JIRA)
+
+    def test_etiqueta_intercom_basta(self):
+        df = origen.completar_origen(_df(["Admin Avantio", "Rodwane Serhan"], ["Jennifer Urbas", "Rodwane Serhan"],
+                                         [["Intercom"], ["intercom", "otra"]]))
+        self.assertEqual(df["origen"].tolist(), [origen.INTERCOM, origen.INTERCOM])
+
+    def test_creado_a_mano_sin_etiqueta_es_interna(self):
+        df = origen.completar_origen(_df(["Carmen Yepes"], ["Carmen Yepes"]))
+        self.assertEqual(df["origen"].iloc[0], origen.JIRA)
+
+    def test_integracion_sin_cambiar_informador_es_interna(self):
+        df = origen.completar_origen(_df(["Admin Avantio"], ["Admin Avantio"]))
         self.assertEqual(df["origen"].iloc[0], origen.JIRA)
 
     def test_sin_creador_no_se_inventa(self):
         df = origen.completar_origen(_df([None, ""]))
         self.assertEqual(df["origen"].tolist(), [origen.DESCONOCIDO, origen.DESCONOCIDO])
 
-    def test_tolera_espacios_alrededor(self):
-        df = origen.completar_origen(_df(["  Admin Avantio  "]))
+    def test_sin_creador_pero_con_etiqueta_es_intercom(self):
+        df = origen.completar_origen(_df([None], etiquetas=[["Intercom"]]))
         self.assertEqual(df["origen"].iloc[0], origen.INTERCOM)
 
-    def test_sin_columna_creador(self):
+    def test_tolera_espacios_alrededor(self):
+        df = origen.completar_origen(_df(["  Admin Avantio  "], [" Carmen Yepes "]))
+        self.assertEqual(df["origen"].iloc[0], origen.INTERCOM)
+
+    def test_sin_columnas(self):
         df = origen.completar_origen(pd.DataFrame({"ticket_id": ["WP-1"]}))
         self.assertEqual(df["origen"].iloc[0], origen.DESCONOCIDO)
 
@@ -38,7 +62,8 @@ class CompletarOrigenTest(unittest.TestCase):
 
 class ResumenOrigenTest(unittest.TestCase):
     def test_cuenta_y_porcentaje(self):
-        df = origen.completar_origen(_df(["Admin Avantio"] * 3 + ["Carmen Yepes"]))
+        df = origen.completar_origen(_df(["Admin Avantio"] * 3 + ["Admin Avantio"],
+                                         ["Carmen Yepes"] * 3 + ["Jennifer Urbas"]))
         resumen = origen.resumen_origen(df)
         self.assertEqual(resumen["total"], 4)
         self.assertEqual(resumen["intercom"], 3)

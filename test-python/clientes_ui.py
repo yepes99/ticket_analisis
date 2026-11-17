@@ -301,7 +301,7 @@ TICKETS_COLUMN_CONFIG = {
     "estado": "Estado",
     "origen": stcc.TextColumn(
         "Origen",
-        help="De donde entro el ticket: 💬 de una conversacion de Intercom, 🛠️ creado directamente en Jira.",
+        help="💬 Tracker: lleva la etiqueta Intercom o entró por la integración y se pasó a Carmen. 🛠️ Interna: todo lo demás.",
     ),
     "prioridad": "Prioridad",
     "size": "Tamaño",
