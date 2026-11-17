@@ -466,15 +466,17 @@ DRILLDOWN_KPIS = {
         mascara_resueltas_periodo,
     ),
     "abiertas": ("🟡 Ver abiertas", "Tareas abiertas", _mascara("resuelto", 0)),
+    # Tracker/internas parten las creadas en el periodo (no todo lo cargado),
+    # para que tracker + internas = creadas y cuadre con su tarjeta.
     "tracker": (
         "💬 Ver tareas de tracker",
-        "Tareas de tracker ticket (entradas desde Intercom)",
-        _mascara("origen", origen_mod.INTERCOM),
+        "Tareas de tracker ticket creadas en el periodo (entradas desde Intercom)",
+        _mascara("origen", origen_mod.INTERCOM).fillna(False) & mascara_creadas,
     ),
     "internas": (
         "🛠️ Ver tareas internas",
-        "Tareas internas (creadas directamente en Jira)",
-        _mascara("origen", origen_mod.JIRA),
+        "Tareas internas creadas en el periodo (creadas directamente en Jira)",
+        _mascara("origen", origen_mod.JIRA).fillna(False) & mascara_creadas,
     ),
 }
 
@@ -493,37 +495,27 @@ boton_drilldown(fila_botones[0], "creadas")
 boton_drilldown(fila_botones[1], "resueltas")
 boton_drilldown(fila_botones[2], "abiertas")
 
-# El total de arriba, partido en dos: lo que entra por Intercom como
-# tracker ticket y lo que el equipo abre a mano en Jira.
-resumen_origen = origen_mod.resumen_origen(filtered)
+# Las creadas en el periodo, partidas en dos: lo que entra por Intercom como
+# tracker ticket y lo que el equipo abre a mano en Jira. Se calcula sobre
+# las creadas (no sobre todo lo cargado) para que sumen lo mismo que la
+# tarjeta "Creadas en el periodo".
+resumen_origen = origen_mod.resumen_origen(filtered[mascara_creadas])
 pct_tracker = resumen_origen["pct_intercom"]
 pct_interna = resumen_origen["pct_jira"]
-
-
-def _desglose_origen(valor_origen):
-    """' · N creadas en el periodo · M de antes' para las tarjetas de origen."""
-    if not hay_rango or "origen" not in filtered.columns:
-        return ""
-    del_origen = filtered["origen"].eq(valor_origen).fillna(False)
-    creadas = int((del_origen & mascara_creadas).sum())
-    antes = int((del_origen & ~mascara_creadas).sum())
-    return f" · {_num(creadas)} creadas en el periodo · {_num(antes)} de antes"
-
+texto_base = "de las creadas en el periodo" if hay_rango else "del total"
 
 kpi_grid(
     [
         (
             "💬 Tareas de tracker ticket",
-            str(resumen_origen["intercom"]),
-            (f"Entran desde Intercom · {pct_tracker}% del total" if pct_tracker is not None else "Sin dato de origen")
-            + _desglose_origen(origen_mod.INTERCOM),
+            _num(resumen_origen["intercom"]),
+            f"Entran desde Intercom · {pct_tracker}% {texto_base}" if pct_tracker is not None else "Sin dato de origen",
             "",
         ),
         (
             "🛠️ Tareas internas",
-            str(resumen_origen["jira"]),
-            (f"Creadas directamente en Jira · {pct_interna}% del total" if pct_interna is not None else "Sin dato de origen")
-            + _desglose_origen(origen_mod.JIRA),
+            _num(resumen_origen["jira"]),
+            f"Creadas directamente en Jira · {pct_interna}% {texto_base}" if pct_interna is not None else "Sin dato de origen",
             "",
         ),
     ],
