@@ -25,10 +25,20 @@ class CompletarOrigenTest(unittest.TestCase):
         df = origen.completar_origen(_df(["Admin Avantio"], ["Jennifer Urbas"]))
         self.assertEqual(df["origen"].iloc[0], origen.JIRA)
 
-    def test_etiqueta_intercom_basta(self):
+    def test_etiqueta_con_otro_informador_es_interna(self):
+        # Caso real WP-31560: etiqueta Intercom pero informadora Jennifer Urbas.
         df = origen.completar_origen(_df(["Admin Avantio", "Rodwane Serhan"], ["Jennifer Urbas", "Rodwane Serhan"],
                                          [["Intercom"], ["intercom", "otra"]]))
-        self.assertEqual(df["origen"].tolist(), [origen.INTERCOM, origen.INTERCOM])
+        self.assertEqual(df["origen"].tolist(), [origen.JIRA, origen.JIRA])
+
+    def test_etiqueta_y_carmen_es_intercom(self):
+        df = origen.completar_origen(_df(["Carmen Yepes"], ["Carmen Yepes"], [["Intercom"]]))
+        self.assertEqual(df["origen"].iloc[0], origen.INTERCOM)
+
+    def test_integracion_y_carmen_sin_etiqueta_es_intercom(self):
+        # Casos reales WP-31387/31510/31511: entraron sin etiqueta.
+        df = origen.completar_origen(_df(["Admin Avantio"], ["Carmen Yepes"], [[]]))
+        self.assertEqual(df["origen"].iloc[0], origen.INTERCOM)
 
     def test_creado_a_mano_sin_etiqueta_es_interna(self):
         df = origen.completar_origen(_df(["Carmen Yepes"], ["Carmen Yepes"]))

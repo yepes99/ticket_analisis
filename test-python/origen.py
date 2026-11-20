@@ -1,15 +1,17 @@
 """
 De donde viene cada ticket: de Intercom (tracker ticket) o interno.
 
-Un ticket es de Intercom si cumple cualquiera de estas dos condiciones:
-1. Tiene la etiqueta "Intercom" en Jira.
-2. Entro por la integracion de Intercom (lo crea la cuenta "Admin Avantio")
-   y despues el informador se cambio a la persona de soporte que atiende
-   Intercom (Carmen Yepes, ver INFORMADORES_INTERCOM).
+Un ticket es un tracker de Intercom (de soporte web) si se cumplen las dos:
+1. El informador es la persona de soporte que atiende Intercom (Carmen
+   Yepes, ver INFORMADORES_INTERCOM).
+2. Viene de Intercom: tiene la etiqueta "Intercom" en Jira, o lo creo la
+   integracion de Intercom (cuenta "Admin Avantio"). Lo normal es que tenga
+   la etiqueta; lo segundo cubre los pocos que entraron sin ella.
 
-Todo lo demas es interno, aunque lo haya creado "Admin Avantio": si el
-informador pasa a otra persona (p.ej. alguien de CS) y no lleva la
-etiqueta, no es un tracker ticket (caso real: WP-31529).
+Todo lo demas es interno, aunque venga de Intercom: si el informador es
+otra persona (p.ej. alguien de CS), no es un tracker de soporte web aunque
+lleve la etiqueta (casos reales: WP-31529, WP-31560 de Jennifer Urbas). En
+Intercom esos tickets estan en otros equipos, no en "Web changes".
 
 El creador no se puede cambiar en Jira, por eso sirve para saber por donde
 entro; el informador dice quien lo gestiono despues.
@@ -71,12 +73,13 @@ def completar_origen(df):
         else pd.Series(False, index=df.index)
     )
 
-    via_integracion = creador.eq(CUENTA_INTERCOM).fillna(False) & informador.isin(INFORMADORES_INTERCOM).fillna(False)
-    es_intercom = con_etiqueta | via_integracion
+    viene_de_intercom = con_etiqueta | creador.eq(CUENTA_INTERCOM).fillna(False)
+    informador_soporte = informador.isin(INFORMADORES_INTERCOM).fillna(False)
+    es_intercom = viene_de_intercom & informador_soporte
 
     df["origen"] = pd.Series(JIRA, index=df.index, dtype="object")
     df.loc[es_intercom, "origen"] = INTERCOM
-    # Sin creador y sin etiqueta de Intercom no se puede saber de donde vino.
+    # Sin creador ni etiqueta no se puede saber de donde vino.
     sin_creador = (creador.isna() | creador.eq("")).fillna(True)
     df.loc[sin_creador & ~con_etiqueta, "origen"] = DESCONOCIDO
     return df

@@ -301,7 +301,7 @@ TICKETS_COLUMN_CONFIG = {
     "estado": "Estado",
     "origen": stcc.TextColumn(
         "Origen",
-        help="💬 Tracker: lleva la etiqueta Intercom o entró por la integración y se pasó a Carmen. 🛠️ Interna: todo lo demás.",
+        help="💬 Tracker: viene de Intercom (etiqueta o integración) y la informadora es Carmen. 🛠️ Interna: todo lo demás.",
     ),
     "prioridad": "Prioridad",
     "size": "Tamaño",
